@@ -11,6 +11,11 @@ import (
 
 func main() {
 
+	if len(os.Args) == 1 {
+		usage()
+		os.Exit(0)
+	}
+
 	// Disable output buffering, enable streaming
 	cmdOptions := cmd.Options{
 		Buffered:  false,
@@ -78,7 +83,6 @@ func main() {
 
 	// Create Cmd with options
 	envCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
-	envCmd.Env = env
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
@@ -204,4 +208,56 @@ func Find(slice []string, val string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+func usage() {
+	usage := `k - kubectl wrapper for advanced usage
+
+Usage:  k [user][@cluster][:namespace] <kubectl options>
+	k [+context] <kubectl options>
+	k <kubectl options>
+
+k is a wrapper for kubectl that makes using multiple clusters,
+namespaces, contexts, and users easier. The first argument
+is parsed to check if it contains sepecial characters to
+add required flags to kubectl.
+
+Example:	
+	k :kube-public apply -f pod.yaml
+	Runs: kubectl apply -f pod.yaml --namespace kube-public
+
+	k +us-east-1 cluster-info
+	Runs: kubectl --context us-east-1 cluster-info
+
+	k @prod:kube-system get pods
+	Runs: kubectl --cluster prod --namespace kube-system \
+		get pods
+
+Environment Variables:
+	Setting the flags manually will override the
+	environment variable.
+	e.g. KUBE_NAMESPACE=kube-system k get pod -n default
+	  This example will get pods in the default
+	  namespace.
+
+	KUBE_NAMESPACE: sets the --namespace argument
+	KUBE_CONTEXT:   sets the --context argument
+
+	KUBECONFIG: Kubeconfig can be set manually in your
+	environment. If one is not set then all files
+	in $HOME/.kube/** will be added to the kubeconfig
+	argument (ignoring cache directories).
+	e.g. The below directory struture would result in
+	KUBECONFIG=$HOME/.kube/config:$HOME/.kube/eksctl/clusters/cluster1
+	$HOME/.kube
+	├── config
+	└── eksctl/
+	    └── clusters/
+	        └── cluster1
+
+	k version = 0.0.1
+
+	To print kubectl help use k --help
+`
+	fmt.Printf("%s", usage)
 }
