@@ -24,28 +24,19 @@ func main() {
 
 	args := os.Args[1:]
 
-	// check if KUBECONFIG is NOT set
-	// we don't set the argument if KUBECONFIG is explicitly set
-	_, envSet := os.LookupEnv("KUBECONFIG")
-	if !envSet {
-		// if KUBECONFIG isn't set generate one from all the files in ~/.kube
-		// ignore cache and http-cache directories
-		args = append(args, "--kubeconfig", buildKubeconfig())
-	}
-
 	// check if KUBE_NAMESPACE is set
 	namespace, envSet := os.LookupEnv("KUBE_NAMESPACE")
 	if envSet {
 		// don't use env if flags already specified
-		_, foundNS := Find(args, "--namespace")
-		_, foundNS2 := Find(args, "-n")
+		_, foundNS := sliceFind(args, "--namespace")
+		_, foundNS2 := sliceFind(args, "-n")
 		if !foundNS && !foundNS2 {
 			args = append(args, "--namespace", namespace)
 		}
 	}
 	context, envSet := os.LookupEnv("KUBE_CONTEXT")
 	if envSet {
-		_, foundContext := Find(args, "--namespace")
+		_, foundContext := sliceFind(args, "--namespace")
 		if !foundContext {
 			args = append(args, "--context", context)
 		}
@@ -70,7 +61,11 @@ func main() {
 			args = append(args, "--context", clusterArgs.context)
 		} else {
 			if clusterArgs.namespace != "" {
+				// if clusterArgs.namespace == "*" {
+				// 	args = append(args, "--all-namespaces")
+				// } else {
 				args = append(args, "--namespace", clusterArgs.namespace)
+				// }
 			}
 			if clusterArgs.cluster != "" {
 				args = append(args, "--cluster", clusterArgs.cluster)
@@ -83,6 +78,16 @@ func main() {
 
 	// Create Cmd with options
 	envCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
+
+	// check if KUBECONFIG is NOT set
+	// we don't set the argument if KUBECONFIG is explicitly set
+	_, kubeconfigBool := os.LookupEnv("KUBECONFIG")
+	if !kubeconfigBool {
+		// if KUBECONFIG isn't set generate one from all the files in ~/.kube
+		// ignore cache and http-cache directories
+		envCmd.Env = os.Environ()
+		envCmd.Env = append(envCmd.Env, "KUBECONFIG="+buildKubeconfig())
+	}
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
@@ -117,10 +122,23 @@ func main() {
 
 func parseCluster(s string) cluster {
 	// [user][@cluster][:namespace]
+	// [+context][:namespace]
 	var clusterArgs cluster
-	maybeContext := strings.FieldsFunc(s, parseContext)
-	maybeNamespace := strings.FieldsFunc(s, parseNamespace)
-	maybeCluster := strings.FieldsFunc(s, parseClusterName)
+	var maybeContext []string
+	var maybeCluster []string
+	var maybeNamespace []string
+
+	// +context and @cluster are mutually exclusive
+	if strings.ContainsAny(s, "+") {
+		// Don't try to pull out context if there's no +
+		maybeContext = strings.FieldsFunc(s, parseContext)
+	} else if strings.ContainsAny(s, "@") {
+		maybeCluster = strings.FieldsFunc(s, parseClusterName)
+	}
+	if strings.ContainsAny(s, ":") {
+		maybeNamespace = strings.FieldsFunc(s, parseNamespace)
+	}
+
 	// fmt.Println("maybeNamespace: ", maybeNamespace)
 	// fmt.Println("maybeCluster: ", maybeCluster)
 
@@ -134,13 +152,13 @@ func parseCluster(s string) cluster {
 			clusterArgs.namespace = maybeNamespace[0] // [namespace]
 		}
 
-		if len(maybeCluster) == 2 {
+		if len(maybeCluster) == 2 { // [ user cluster]
 			clusterArgs.user = maybeCluster[0]
 			if strings.Contains(maybeCluster[1], "@") {
 				clusterName := strings.FieldsFunc(maybeCluster[1], parseNamespace)
 				clusterArgs.cluster = clusterName[0]
 			}
-		} else if len(maybeCluster) == 1 {
+		} else if len(maybeCluster) == 1 { // [cluster]
 			if strings.Contains(maybeCluster[0], "@") {
 				clusterArgs.cluster = maybeCluster[0]
 			}
@@ -150,15 +168,15 @@ func parseCluster(s string) cluster {
 }
 
 func parseContext(r rune) bool {
-	return r == '+'
+	return r == '+' || r == ':'
 }
 
 func parseNamespace(r rune) bool {
-	return r == ':'
+	return r == ':' || r == '@' || r == '+'
 }
 
 func parseClusterName(r rune) bool {
-	return r == '@'
+	return r == '@' || r == ':'
 }
 
 type cluster struct {
@@ -182,11 +200,14 @@ func buildKubeconfig() (kc string) {
 		}
 		// fmt.Printf("visited file or dir: %q\n", path)
 		if !info.IsDir() {
+			// fmt.Println(info.Name())
 			if len(kubeconfig) == 0 {
 				// no kubeconfig set yet
 				kubeconfig = path
 			} else {
-				kubeconfig = kubeconfig + ":" + path
+				if path != "" {
+					kubeconfig = kubeconfig + ":" + path
+				}
 			}
 
 		}
@@ -196,12 +217,12 @@ func buildKubeconfig() (kc string) {
 		fmt.Printf("error walking the path")
 		return
 	}
-	return kubeconfig
+	return strings.TrimSuffix(kubeconfig, ":")
 }
 
-// Find takes a slice and looks for an element in it. If found it will
+// sliceFind takes a slice and looks for an element in it. If found it will
 // return it's key, otherwise it will return -1 and a bool of false.
-func Find(slice []string, val string) (int, bool) {
+func sliceFind(slice []string, val string) (int, bool) {
 	for i, item := range slice {
 		if item == val {
 			return i, true
@@ -217,12 +238,11 @@ Usage:  k [user][@cluster][:namespace] <kubectl options>
 	k [+context] <kubectl options>
 	k <kubectl options>
 
-k is a wrapper for kubectl that makes using multiple clusters,
-namespaces, contexts, and users easier. The first argument
-is parsed to check if it contains sepecial characters to
-add required flags to kubectl.
+k is a wrapper for kubectl that makes using multiple clusters, namespaces,
+contexts, and users easier. The first argument is parsed to check if it
+contains sepecial characters to add required flags to kubectl.
 
-Example:	
+Examples:
 	k :kube-public apply -f pod.yaml
 	Runs: kubectl apply -f pod.yaml --namespace kube-public
 
@@ -230,23 +250,19 @@ Example:
 	Runs: kubectl --context us-east-1 cluster-info
 
 	k @prod:kube-system get pods
-	Runs: kubectl --cluster prod --namespace kube-system \
-		get pods
+	Runs: kubectl --cluster prod --namespace kube-system get pods
 
 Environment Variables:
-	Setting the flags manually will override the
-	environment variable.
+	Setting the flags manually will override the environment variable.
 	e.g. KUBE_NAMESPACE=kube-system k get pod -n default
-	  This example will get pods in the default
-	  namespace.
+	  This example will get pods in the default namespace.
 
 	KUBE_NAMESPACE: sets the --namespace argument
 	KUBE_CONTEXT:   sets the --context argument
 
-	KUBECONFIG: Kubeconfig can be set manually in your
-	environment. If one is not set then all files
-	in $HOME/.kube/** will be added to the kubeconfig
-	argument (ignoring cache directories).
+	KUBECONFIG: Kubeconfig can be set manually in your environment.
+	If one is not set then all files in $HOME/.kube/** will be 
+	added to the kubeconfig	argument (ignoring cache directories).
 	e.g. The below directory struture would result in
 	KUBECONFIG=$HOME/.kube/config:$HOME/.kube/eksctl/clusters/cluster1
 	$HOME/.kube
@@ -255,7 +271,14 @@ Environment Variables:
 	    └── clusters/
 	        └── cluster1
 
-	k version = 0.0.1
+	WARNING: This CLI is likely to change. Please do not rely on it
+	for automation or in scripts.
+
+	WARNING 2: Argument parsing will have unpredictable behavior if
+	your contexts or clusters have the characters '@', ':', or '+' in
+	their name.
+
+	k version 0.0.1
 
 	To print kubectl help use k --help
 `
