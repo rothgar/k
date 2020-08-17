@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/go-cmd/cmd"
@@ -61,11 +62,11 @@ func main() {
 			args = append(args, "--context", clusterArgs.context)
 		} else {
 			if clusterArgs.namespace != "" {
-				// if clusterArgs.namespace == "*" {
-				// 	args = append(args, "--all-namespaces")
-				// } else {
-				args = append(args, "--namespace", clusterArgs.namespace)
-				// }
+				if clusterArgs.namespace == "*" {
+					args = append(args, "--all-namespaces")
+				} else {
+					args = append(args, "--namespace", clusterArgs.namespace)
+				}
 			}
 			if clusterArgs.cluster != "" {
 				args = append(args, "--cluster", clusterArgs.cluster)
@@ -120,63 +121,47 @@ func main() {
 	<-doneChan
 }
 
+func captureFirst(r *regexp.Regexp, s string) string {
+	c := r.FindStringSubmatch(s)
+	if len(c) > 1 {
+		return c[1]
+	}
+	return ""
+}
+
 func parseCluster(s string) cluster {
 	// [user][@cluster][:namespace]
 	// [+context][:namespace]
 	var clusterArgs cluster
-	var maybeContext []string
-	var maybeCluster []string
-	var maybeNamespace []string
+	var maybeContext string
+	var maybeCluster string
+	var maybeNamespace string
+
+	// reContext := regexp.MustCompile(`(?:\+).*(?::|$)`)  // capture between + and : or $
+	// reCluster := regexp.MustCompile(`(?:@)(.*)(?::|$)`) // capture between @ and : or $
+	// reNamespace := regexp.MustCompile(`(?::)(.*)(?:$)`) // capture between : and $
 
 	// +context and @cluster are mutually exclusive
-	if strings.ContainsAny(s, "+") {
-		// Don't try to pull out context if there's no +
-		maybeContext = strings.FieldsFunc(s, parseContext)
-	} else if strings.ContainsAny(s, "@") {
-		maybeCluster = strings.FieldsFunc(s, parseClusterName)
-	}
-	if strings.ContainsAny(s, ":") {
-		maybeNamespace = strings.FieldsFunc(s, parseNamespace)
-	}
+	maybeContext = captureFirst(regexp.MustCompile(`(?:\+)(.*)(?:[:$])`), s) // capture between + and : or $
+	maybeCluster = captureFirst(regexp.MustCompile(`(?:@)(.*)(?:[:$])`), s)  // capture between @ and : or $
+	maybeNamespace = captureFirst(regexp.MustCompile(`(?::)(.*)(?:$)`), s)   // capture between : and $
 
+	// fmt.Println("maybeContext: ", maybeContext)
 	// fmt.Println("maybeNamespace: ", maybeNamespace)
 	// fmt.Println("maybeCluster: ", maybeCluster)
 
-	if len(maybeContext) > 0 {
+	if maybeContext != "" {
 		// if context is set then no other aruments should be parsed
-		clusterArgs.context = maybeContext[0]
-	} else {
-		if len(maybeNamespace) == 2 {
-			clusterArgs.namespace = maybeNamespace[1] // [user@cluster namespace]
-		} else if len(maybeNamespace) == 1 {
-			clusterArgs.namespace = maybeNamespace[0] // [namespace]
-		}
-
-		if len(maybeCluster) == 2 { // [ user cluster]
-			clusterArgs.user = maybeCluster[0]
-			if strings.Contains(maybeCluster[1], "@") {
-				clusterName := strings.FieldsFunc(maybeCluster[1], parseNamespace)
-				clusterArgs.cluster = clusterName[0]
-			}
-		} else if len(maybeCluster) == 1 { // [cluster]
-			if strings.Contains(maybeCluster[0], "@") {
-				clusterArgs.cluster = maybeCluster[0]
-			}
-		}
+		clusterArgs.context = maybeContext
 	}
+	if maybeNamespace != "" {
+		clusterArgs.namespace = maybeNamespace
+	}
+	if maybeCluster != "" {
+		clusterArgs.cluster = maybeCluster
+	}
+
 	return clusterArgs
-}
-
-func parseContext(r rune) bool {
-	return r == '+' || r == ':'
-}
-
-func parseNamespace(r rune) bool {
-	return r == ':' || r == '@' || r == '+'
-}
-
-func parseClusterName(r rune) bool {
-	return r == '@' || r == ':'
 }
 
 type cluster struct {
