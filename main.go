@@ -134,6 +134,7 @@ func parseCluster(s string) cluster {
 	// [+context][:namespace]
 	var clusterArgs cluster
 	var maybeContext string
+	var maybeUser string
 	var maybeCluster string
 	var maybeNamespace string
 
@@ -143,10 +144,12 @@ func parseCluster(s string) cluster {
 
 	// +context and @cluster are mutually exclusive
 	maybeContext = captureFirst(regexp.MustCompile(`(?:\+)(.*)(?:[:$])`), s) // capture between + and : or $
+	maybeUser = captureFirst(regexp.MustCompile(`^(.*)(?:@)`), s)            // capture between ^ and @
 	maybeCluster = captureFirst(regexp.MustCompile(`(?:@)(.*)(?:[:$])`), s)  // capture between @ and : or $
 	maybeNamespace = captureFirst(regexp.MustCompile(`(?::)(.*)(?:$)`), s)   // capture between : and $
 
 	// fmt.Println("maybeContext: ", maybeContext)
+	// fmt.Println("maybeUser: ", maybeUser)
 	// fmt.Println("maybeNamespace: ", maybeNamespace)
 	// fmt.Println("maybeCluster: ", maybeCluster)
 
@@ -154,11 +157,14 @@ func parseCluster(s string) cluster {
 		// if context is set then no other aruments should be parsed
 		clusterArgs.context = maybeContext
 	}
-	if maybeNamespace != "" {
-		clusterArgs.namespace = maybeNamespace
+	if maybeUser != "" {
+		clusterArgs.user = maybeUser
 	}
 	if maybeCluster != "" {
 		clusterArgs.cluster = maybeCluster
+	}
+	if maybeNamespace != "" {
+		clusterArgs.namespace = maybeNamespace
 	}
 
 	return clusterArgs
