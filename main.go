@@ -17,29 +17,24 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Disable output buffering, enable streaming
-	cmdOptions := cmd.Options{
-		Buffered:  false,
-		Streaming: true,
-	}
-
-	args := os.Args[1:]
+	// remove command name
+	passedArgs := os.Args[1:]
 
 	// check if KUBE_NAMESPACE is set
 	namespace, envSet := os.LookupEnv("KUBE_NAMESPACE")
 	if envSet {
 		// don't use env if flags already specified
-		_, foundNS := sliceFind(args, "--namespace")
-		_, foundNS2 := sliceFind(args, "-n")
+		_, foundNS := sliceFind(passedArgs, "--namespace")
+		_, foundNS2 := sliceFind(passedArgs, "-n")
 		if !foundNS && !foundNS2 {
-			args = append(args, "--namespace", namespace)
+			passedArgs = append(passedArgs, "--namespace", namespace)
 		}
 	}
 	context, envSet := os.LookupEnv("KUBE_CONTEXT")
 	if envSet {
-		_, foundContext := sliceFind(args, "--namespace")
+		_, foundContext := sliceFind(passedArgs, "--namespace")
 		if !foundContext {
-			args = append(args, "--context", context)
+			passedArgs = append(passedArgs, "--context", context)
 		}
 	}
 
@@ -51,30 +46,74 @@ func main() {
 	// user@cluster
 	// user@cluster:namespace
 	// +context
-	// +context:namespace <- would be nice if this works
-	if strings.ContainsAny(args[0], "+@:") {
-		clusterArgs := parseCluster(args[0])
-		// fmt.Println(clusterArgs)
-		args = args[1:]
-		if clusterArgs.context != "" {
-			// only add context because it contains other info
-			// parsing doesn't currently support overriding context
-			args = append(args, "--context", clusterArgs.context)
-		} else {
-			if clusterArgs.namespace != "" {
-				if clusterArgs.namespace == "*" {
+	// +context:namespace
+	if strings.ContainsAny(passedArgs[0], "+@:") {
+		clustersMap, kSpaceNames := parseCluster(passedArgs[0])
+		if len(clustersMap) > 1 {
+			// TODO use key name for output
+			for name, cluster := range clustersMap {
+				args := passedArgs[1:]
+				// fmt.Println("Detected multiple args")
+				// fmt.Println(clustersMap)
+				if cluster.context != "" {
+					// only add context because it contains other info
+					// parsing doesn't currently support overriding context
+					args = append(args, "--context", cluster.context)
+				} else if cluster.cluster != "" {
+					args = append(args, "--cluster", cluster.cluster)
+				}
+				if cluster.namespace != "" {
+					if cluster.namespace == "*" {
+						args = append(args, "--all-namespaces")
+					} else {
+						args = append(args, "--namespace", cluster.namespace)
+					}
+				}
+
+				if cluster.user != "" {
+					args = append(args, "--user", cluster.user)
+				}
+
+				// fmt.Println(args)
+				runKubectl(args, name)
+			}
+		} else if len(clustersMap) == 1 {
+			// cluster should be of type cluster
+			cluster := clustersMap[kSpaceNames[0]]
+			// fmt.Println(cluster)
+			args := passedArgs[1:]
+			if cluster.context != "" {
+				// only add context because it contains other info
+				// parsing doesn't currently support overriding context
+				args = append(args, "--context", cluster.context)
+			} else if cluster.cluster != "" {
+				args = append(args, "--cluster", cluster.cluster)
+			}
+			if cluster.namespace != "" {
+				if cluster.namespace == "*" {
 					args = append(args, "--all-namespaces")
 				} else {
-					args = append(args, "--namespace", clusterArgs.namespace)
+					args = append(args, "--namespace", cluster.namespace)
 				}
 			}
-			if clusterArgs.cluster != "" {
-				args = append(args, "--cluster", clusterArgs.cluster)
+			if cluster.user != "" {
+				args = append(args, "--user", cluster.user)
 			}
-			if clusterArgs.user != "" {
-				args = append(args, "--user", clusterArgs.user)
-			}
+			// fmt.Println(args)
+			runKubectl(args, "")
 		}
+	} else {
+		// fmt.Println(passedArgs)
+		runKubectl(passedArgs, "")
+	}
+}
+
+func runKubectl(args []string, kspace string) {
+
+	// Disable output buffering, enable streaming
+	cmdOptions := cmd.Options{
+		Buffered:  false,
+		Streaming: true,
 	}
 
 	// Create Cmd with options
@@ -103,7 +142,11 @@ func main() {
 					envCmd.Stdout = nil
 					continue
 				}
-				fmt.Println(line)
+				if kspace != "" {
+					fmt.Println(kspace, line)
+				} else {
+					fmt.Println(line)
+				}
 			case line, open := <-envCmd.Stderr:
 				if !open {
 					envCmd.Stderr = nil
@@ -129,45 +172,92 @@ func captureFirst(r *regexp.Regexp, s string) string {
 	return ""
 }
 
-func parseCluster(s string) cluster {
+func parseCluster(s string) (map[string]cluster, []string) {
+
 	// [user][@cluster][:namespace]
 	// [+context][:namespace]
-	var clusterArgs cluster
-	var maybeContext string
-	var maybeUser string
-	var maybeCluster string
-	var maybeNamespace string
+	kSpace := make(map[string]cluster)
+
+	var tmpCluster cluster
+	var tmpName string
+	var maybeContext []string
+	// var maybeUser []string
+	var maybeCluster []string
+	var maybeNamespace []string
 
 	// reContext := regexp.MustCompile(`(?:\+).*(?::|$)`)  // capture between + and : or $
 	// reCluster := regexp.MustCompile(`(?:@)(.*)(?::|$)`) // capture between @ and : or $
 	// reNamespace := regexp.MustCompile(`(?::)(.*)(?:$)`) // capture between : and $
 
 	// +context and @cluster are mutually exclusive
-	maybeContext = captureFirst(regexp.MustCompile(`(?:\+)(.*)(?:[:$])`), s) // capture between + and : or $
-	maybeUser = captureFirst(regexp.MustCompile(`^(.*)(?:@)`), s)            // capture between ^ and @
-	maybeCluster = captureFirst(regexp.MustCompile(`(?:@)(.*)(?:[:$])`), s)  // capture between @ and : or $
-	maybeNamespace = captureFirst(regexp.MustCompile(`(?::)(.*)(?:$)`), s)   // capture between : and $
+	maybeContext = strings.Split(captureFirst(regexp.MustCompile(`(?:\+)([0-9A-Za-z_,]+)`), s), ",") // capture between + and : or $
+	// maybeUser = strings.Split(captureFirst(regexp.MustCompile(`^(.*)(?:@)`), s), ",")            // capture between ^ and @
+	maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,]+)`), s), ",") // capture between @ and : or $
+	maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")      // capture between : and $
 
-	// fmt.Println("maybeContext: ", maybeContext)
-	// fmt.Println("maybeUser: ", maybeUser)
-	// fmt.Println("maybeNamespace: ", maybeNamespace)
-	// fmt.Println("maybeCluster: ", maybeCluster)
+	// fmt.Println("maybeContext: ", maybeContext, len(maybeContext))
+	// fmt.Println("maybeUser: ", maybeUser, len(maybeUser))
+	// fmt.Println("maybeNamespace: ", maybeNamespace, len(maybeNamespace))
+	// fmt.Println("maybeCluster: ", maybeCluster, len(maybeCluster))
 
-	if maybeContext != "" {
-		// if context is set then no other aruments should be parsed
-		clusterArgs.context = maybeContext
-	}
-	if maybeUser != "" {
-		clusterArgs.user = maybeUser
-	}
-	if maybeCluster != "" {
-		clusterArgs.cluster = maybeCluster
-	}
-	if maybeNamespace != "" {
-		clusterArgs.namespace = maybeNamespace
+	if maybeContext[0] != "" {
+		// check if we have more than 1 namespace
+		if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
+			for _, ctx := range maybeContext {
+				for _, ns := range maybeNamespace {
+					// run if given 1 or more context and 1 or more namespace
+					tmpName = "+" + ctx + ":" + ns
+					// fmt.Println(tmpName)
+					tmpCluster.context = ctx
+					tmpCluster.namespace = ns
+					kSpace[tmpName] = tmpCluster
+				}
+			}
+		} else {
+			// No namespace given
+			for _, ctx := range maybeContext {
+				tmpName = "+" + ctx
+				tmpCluster.context = ctx
+				kSpace[tmpName] = tmpCluster
+			}
+		}
+
+	} else if maybeCluster[0] != "" {
+		if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
+			for _, cl := range maybeCluster {
+				for _, ns := range maybeNamespace {
+					// run if given 1 or more context and 1 or more namespace
+					tmpName = "@" + cl + ":" + ns
+					// fmt.Println(tmpName)
+					tmpCluster.cluster = cl
+					tmpCluster.namespace = ns
+					kSpace[tmpName] = tmpCluster
+				}
+			}
+		} else {
+			// No namespace given
+			for _, cl := range maybeCluster {
+				tmpName = "@" + cl
+				tmpCluster.cluster = cl
+				kSpace[tmpName] = tmpCluster
+			}
+		}
+	} else if maybeNamespace[0] != "" {
+		for _, ns := range maybeNamespace {
+			tmpName = ":" + ns
+			tmpCluster.namespace = ns
+			kSpace[tmpName] = tmpCluster
+		}
 	}
 
-	return clusterArgs
+	kNames := make([]string, len(kSpace))
+
+	i := 0
+	for k := range kSpace {
+		kNames[i] = k
+		i++
+	}
+	return kSpace, kNames
 }
 
 type cluster struct {
@@ -226,7 +316,7 @@ func usage() {
 	usage := `k - kubectl wrapper for advanced usage
 
 Usage:  k [user][@cluster][:namespace] <kubectl options>
-	k [+context] <kubectl options>
+	k [+context][:namespace] <kubectl options>
 	k <kubectl options>
 
 k is a wrapper for kubectl that makes using multiple clusters, namespaces,
