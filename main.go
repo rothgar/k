@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-cmd/cmd"
 )
@@ -38,6 +39,19 @@ func main() {
 		}
 	}
 
+	var kubeEnv string
+
+	// check if KUBECONFIG is NOT set
+	// we don't set the argument if KUBECONFIG is explicitly set
+	_, kubeconfigBool := os.LookupEnv("KUBECONFIG")
+	if !kubeconfigBool {
+		// if KUBECONFIG isn't set generate one from all the files in ~/.kube
+		// ignore cache and http-cache directories
+		kubeEnv = buildKubeconfig()
+	} else {
+		kubeEnv = os.Getenv("KUBECONFIG")
+	}
+
 	// check if the first arg is special syntax
 	// can specify
 	// :namespace
@@ -48,7 +62,8 @@ func main() {
 	// +context
 	// +context:namespace
 	if strings.ContainsAny(passedArgs[0], "+@:") {
-		clustersMap, kSpaceNames := parseCluster(passedArgs[0])
+
+		clustersMap, kSpaceNames := ParseCluster(passedArgs[0], kubeEnv)
 		if len(clustersMap) > 1 {
 			// TODO use key name for output
 			for name, cluster := range clustersMap {
@@ -59,9 +74,11 @@ func main() {
 					// only add context because it contains other info
 					// parsing doesn't currently support overriding context
 					args = append(args, "--context", cluster.context)
-				} else if cluster.cluster != "" {
-					args = append(args, "--cluster", cluster.cluster)
+				} else {
+					fmt.Fprintf(os.Stderr, "failed to process %+v\n", cluster)
+					break
 				}
+
 				if cluster.namespace != "" {
 					if cluster.namespace == "*" {
 						args = append(args, "--all-namespaces")
@@ -70,12 +87,8 @@ func main() {
 					}
 				}
 
-				if cluster.user != "" {
-					args = append(args, "--user", cluster.user)
-				}
-
 				// fmt.Println(args)
-				runKubectl(args, name)
+				runKubectl(args, name, kubeEnv)
 			}
 		} else if len(clustersMap) == 1 {
 			// cluster should be of type cluster
@@ -86,9 +99,11 @@ func main() {
 				// only add context because it contains other info
 				// parsing doesn't currently support overriding context
 				args = append(args, "--context", cluster.context)
-			} else if cluster.cluster != "" {
-				args = append(args, "--cluster", cluster.cluster)
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to process %+v\n", cluster)
+				os.Exit(1)
 			}
+
 			if cluster.namespace != "" {
 				if cluster.namespace == "*" {
 					args = append(args, "--all-namespaces")
@@ -96,19 +111,17 @@ func main() {
 					args = append(args, "--namespace", cluster.namespace)
 				}
 			}
-			if cluster.user != "" {
-				args = append(args, "--user", cluster.user)
-			}
+
 			// fmt.Println(args)
-			runKubectl(args, "")
+			runKubectl(args, "", kubeEnv)
 		}
 	} else {
 		// fmt.Println(passedArgs)
-		runKubectl(passedArgs, "")
+		runKubectl(passedArgs, "", kubeEnv)
 	}
 }
 
-func runKubectl(args []string, kspace string) {
+func runKubectl(args []string, kspace string, env string) {
 
 	// Disable output buffering, enable streaming
 	cmdOptions := cmd.Options{
@@ -118,16 +131,8 @@ func runKubectl(args []string, kspace string) {
 
 	// Create Cmd with options
 	envCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
-
-	// check if KUBECONFIG is NOT set
-	// we don't set the argument if KUBECONFIG is explicitly set
-	_, kubeconfigBool := os.LookupEnv("KUBECONFIG")
-	if !kubeconfigBool {
-		// if KUBECONFIG isn't set generate one from all the files in ~/.kube
-		// ignore cache and http-cache directories
-		envCmd.Env = os.Environ()
-		envCmd.Env = append(envCmd.Env, "KUBECONFIG="+buildKubeconfig())
-	}
+	envCmd.Env = os.Environ()
+	envCmd.Env = append(envCmd.Env, env)
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
@@ -158,6 +163,7 @@ func runKubectl(args []string, kspace string) {
 	}()
 
 	// Run and wait for Cmd to return, discard Status
+	// fmt.Println(envCmd)
 	<-envCmd.Start()
 
 	// Wait for goroutine to print everything
@@ -172,31 +178,26 @@ func captureFirst(r *regexp.Regexp, s string) string {
 	return ""
 }
 
-func parseCluster(s string) (map[string]cluster, []string) {
+// ParseCluster is the main function to parse the first argument given to k
+// It attempts to parse the following patterns
+// [@cluster][,cluster][:namespace][,namespace]
+// [+context][,context][:namespace][,namespace]
+func ParseCluster(s string, env string) (map[string]Cluster, []string) {
+	kSpace := make(map[string]Cluster)
 
-	// [user][@cluster][:namespace]
-	// [+context][:namespace]
-	kSpace := make(map[string]cluster)
-
-	var tmpCluster cluster
+	var tmpCluster Cluster
 	var tmpName string
+
 	var maybeContext []string
-	// var maybeUser []string
 	var maybeCluster []string
 	var maybeNamespace []string
 
-	// reContext := regexp.MustCompile(`(?:\+).*(?::|$)`)  // capture between + and : or $
-	// reCluster := regexp.MustCompile(`(?:@)(.*)(?::|$)`) // capture between @ and : or $
-	// reNamespace := regexp.MustCompile(`(?::)(.*)(?:$)`) // capture between : and $
-
-	// +context and @cluster are mutually exclusive
-	maybeContext = strings.Split(captureFirst(regexp.MustCompile(`(?:\+)([0-9A-Za-z_,]+)`), s), ",") // capture between + and : or $
-	// maybeUser = strings.Split(captureFirst(regexp.MustCompile(`^(.*)(?:@)`), s), ",")            // capture between ^ and @
-	maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,]+)`), s), ",") // capture between @ and : or $
-	maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")      // capture between : and $
+	// I'm sorry. Regex was the easiest way to parse a string
+	maybeContext = strings.Split(captureFirst(regexp.MustCompile(`(?:\+)([0-9A-Za-z_,.\-@]+)`), s), ",") // capture between + and : or $
+	maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,.\-@]+)`), s), ",")  // capture between @ and : or $
+	maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")           // capture between : and $
 
 	// fmt.Println("maybeContext: ", maybeContext, len(maybeContext))
-	// fmt.Println("maybeUser: ", maybeUser, len(maybeUser))
 	// fmt.Println("maybeNamespace: ", maybeNamespace, len(maybeNamespace))
 	// fmt.Println("maybeCluster: ", maybeCluster, len(maybeCluster))
 
@@ -229,6 +230,7 @@ func parseCluster(s string) (map[string]cluster, []string) {
 					// run if given 1 or more context and 1 or more namespace
 					tmpName = "@" + cl + ":" + ns
 					// fmt.Println(tmpName)
+					tmpCluster.context = getContextFromCluster(cl, env)
 					tmpCluster.cluster = cl
 					tmpCluster.namespace = ns
 					kSpace[tmpName] = tmpCluster
@@ -239,6 +241,7 @@ func parseCluster(s string) (map[string]cluster, []string) {
 			for _, cl := range maybeCluster {
 				tmpName = "@" + cl
 				tmpCluster.cluster = cl
+				tmpCluster.context = getContextFromCluster(cl, env)
 				kSpace[tmpName] = tmpCluster
 			}
 		}
@@ -260,8 +263,43 @@ func parseCluster(s string) (map[string]cluster, []string) {
 	return kSpace, kNames
 }
 
-type cluster struct {
-	user      string
+func getContextFromCluster(s string, env string) string {
+	// reads in a cluster string and KUBECONFIG env
+
+	var context string
+
+	envCmd := cmd.NewCmd("kubectl", "config", "get-contexts")
+	// fmt.Println(envCmd)
+	envCmd.Env = append(envCmd.Env, env)
+
+	// Run and wait for Cmd to return Status
+	status := <-envCmd.Start()
+
+	// Print each line of STDOUT from Cmd
+	for i, line := range status.Stdout {
+		if i > 0 {
+			//skip header
+			// fmt.Println(strings.Fields(trimFirstRune(line))[1])
+			contextMatch, _ := regexp.MatchString(strings.Fields(trimFirstRune(line))[1], s)
+			if contextMatch {
+				context = strings.Fields(trimFirstRune(line))[0]
+				// fmt.Println(context)
+			}
+		}
+	}
+	return context
+}
+
+func trimFirstRune(s string) string {
+	_, i := utf8.DecodeRuneInString(s)
+	return s[i:]
+}
+
+/*
+Cluster describes the basic structure for variables we use
+for lookups or arguments to kubectl
+*/
+type Cluster struct {
 	cluster   string
 	namespace string
 	context   string
@@ -298,7 +336,7 @@ func buildKubeconfig() (kc string) {
 		fmt.Printf("error walking the path")
 		return
 	}
-	return strings.TrimSuffix(kubeconfig, ":")
+	return "KUBECONFIG=" + strings.TrimSuffix(kubeconfig, ":")
 }
 
 // sliceFind takes a slice and looks for an element in it. If found it will
@@ -320,8 +358,12 @@ Usage:  k [user][@cluster][:namespace] <kubectl options>
 	k <kubectl options>
 
 k is a wrapper for kubectl that makes using multiple clusters, namespaces,
-contexts, and users easier. The first argument is parsed to check if it
+and contexts easy. The first argument is parsed to check if it
 contains sepecial characters to add required flags to kubectl.
+
+Because clusters are often tied to user authentication using the @cluster
+shorthand will find the context that contains that cluster and run
+kubectl using the correct context instead.
 
 Examples:
 	k :kube-public apply -f pod.yaml
@@ -331,7 +373,7 @@ Examples:
 	Runs: kubectl --context us-east-1 cluster-info
 
 	k @prod:kube-system get pods
-	Runs: kubectl --cluster prod --namespace kube-system get pods
+	Runs: kubectl --context prod --namespace kube-system get pods
 
 Environment Variables:
 	Setting the flags manually will override the environment variable.
@@ -365,3 +407,7 @@ Environment Variables:
 `
 	fmt.Printf("%s", usage)
 }
+
+// TODO: figure out how to handle interrupts when using --watch
+// TODO: figure out how to handle exec (especially with multiple commands)
+// TODO: align column output
