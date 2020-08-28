@@ -99,7 +99,7 @@ When `kubectl` is run it will automatically combine all files into one config an
 
 You can print the combined config with `k config view`.
 
-To not have KUBECONFIG be automatically generated you should export the environment variable to a value (e.g. `export KUBECONFIG=$HOME/.kube/config)
+To not have KUBECONFIG be automatically generated you should export the environment variable to a value (e.g. `export KUBECONFIG=$HOME/.kube/config`)
 
 If you have multiple files be careful which context is set as default or be careful running commands like `k config set-context`.
 Default context will be taken from the first file in the list.
@@ -119,7 +119,7 @@ Otherwise you'll get authentication errors.
 ```
 
 ## TODO
- - [] Support wildcard searching for all kspace arguments
- - [] Tab completion for kspace keywords
- - [] Support multiple kspaces for `exec` in parallel
- - [] Support `K_DEBUG` for debug printing
+ - [ ] Support wildcard searching for all kspace arguments
+ - [ ] Tab completion for kspace keywords
+ - [ ] Support multiple kspaces for `exec` in parallel
+ - [ ] Support `K_DEBUG` for debug printing
