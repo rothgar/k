@@ -1,4 +1,7 @@
 release:
+  github:
+    owner: rothgar
+    name: k
 
 before:
   hooks:
