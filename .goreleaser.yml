@@ -1,0 +1,57 @@
+release:
+
+before:
+  hooks:
+    - go mod tidy
+    - make test
+
+builds:
+- id: k
+  main: ./main.go
+  binary: bin/k
+  goos:
+    - windows
+    - darwin
+    - linux
+  goarch:
+    - amd64
+    - arm64
+  env:
+    - CGO_ENABLED=0
+
+archives:
+- builds:
+  - k
+  replacements:
+    darwin: Darwin
+    linux: Linux
+    windows: Windows
+    amd64: x86_64
+  format: tar.gz
+  format_overrides:
+    - goos: windows
+      format: zip
+
+brews:
+- tap:
+    owner: rothgar
+    name: homebrew-tap
+  homepage: "https://github.com/rothgar/k"
+  description: "Experimental kubectl wrapper"
+  folder: Formula
+  install: |
+    bin.install "k"
+  test: |
+    system "#{bin}/k"
+  dependencies:
+    - kubectl
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'

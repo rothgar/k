@@ -360,7 +360,7 @@ func sliceFind(slice []string, val string) (int, bool) {
 func usage() {
 	usage := `k - kubectl wrapper for advanced usage
 
-Usage:  k [user][@cluster][:namespace] <kubectl options>
+Usage:  k [@cluster][:namespace] <kubectl options>
 	k [+context][:namespace] <kubectl options>
 	k <kubectl options>
 
@@ -408,11 +408,11 @@ Environment Variables:
 	your contexts or clusters have the characters '@', ':', or '+' in
 	their name.
 
-	k version 0.0.1
-
 	To print kubectl help use k --help
 `
+	Version := "devel"
 	fmt.Printf("%s", usage)
+	fmt.Printf("\tk version: \t%s\n", Version)
 }
 
 // TODO: figure out how to handle interrupts when using --watch
