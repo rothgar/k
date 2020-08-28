@@ -12,7 +12,7 @@
             "program": "${fileDirname}",
             "env": {},
             // "env": {"KUBECONFIG": "$HOME/.kube/fargate"},
-            "args": [":kube-system", "get", "pods"]
+            "args": ["@fargate.us-west-2.eksctl.io:kube-system", "get", "pods"]
         }
     ]
 }
