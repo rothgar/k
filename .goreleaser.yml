@@ -21,6 +21,8 @@ builds:
     - arm64
   env:
     - CGO_ENABLED=0
+  ldflags:
+    - -s -w -X 'github.com/rothgar/k/main.version={{.Version}}'
 
 archives:
 - builds:
@@ -43,7 +45,7 @@ brews:
   description: "Experimental kubectl wrapper"
   folder: Formula
   install: |
-    bin.install "k"
+    bin.install "bin/k"
   test: |
     system "#{bin}/k"
   dependencies:
