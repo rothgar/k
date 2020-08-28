@@ -33,7 +33,7 @@ func main() {
 	}
 	context, envSet := os.LookupEnv("KUBE_CONTEXT")
 	if envSet {
-		_, foundContext := sliceFind(passedArgs, "--namespace")
+		_, foundContext := sliceFind(passedArgs, "--context")
 		if !foundContext {
 			passedArgs = append(passedArgs, "--context", context)
 		}
@@ -43,8 +43,9 @@ func main() {
 
 	// check if KUBECONFIG is NOT set
 	// we don't set the argument if KUBECONFIG is explicitly set
-	_, kubeconfigBool := os.LookupEnv("KUBECONFIG")
-	if !kubeconfigBool {
+	_, kubeconfigEnvBool := os.LookupEnv("KUBECONFIG")
+	_, kubeconfigArgBool := sliceFind(passedArgs, "--kubeconfig")
+	if !kubeconfigEnvBool && !kubeconfigArgBool {
 		// if KUBECONFIG isn't set generate one from all the files in ~/.kube
 		// ignore cache and http-cache directories
 		kubeEnv = buildKubeconfig()
@@ -130,9 +131,9 @@ func runKubectl(args []string, kspace string, env string) {
 	}
 
 	// Create Cmd with options
-	envCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
-	envCmd.Env = os.Environ()
-	envCmd.Env = append(envCmd.Env, env)
+	kCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
+	kCmd.Env = os.Environ()
+	kCmd.Env = append(kCmd.Env, env)
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
@@ -140,11 +141,11 @@ func runKubectl(args []string, kspace string, env string) {
 		defer close(doneChan)
 		// Done when both channels have been closed
 		// https://dave.cheney.net/2013/04/30/curious-channels
-		for envCmd.Stdout != nil || envCmd.Stderr != nil {
+		for kCmd.Stdout != nil || kCmd.Stderr != nil {
 			select {
-			case line, open := <-envCmd.Stdout:
+			case line, open := <-kCmd.Stdout:
 				if !open {
-					envCmd.Stdout = nil
+					kCmd.Stdout = nil
 					continue
 				}
 				if kspace != "" {
@@ -152,9 +153,9 @@ func runKubectl(args []string, kspace string, env string) {
 				} else {
 					fmt.Println(line)
 				}
-			case line, open := <-envCmd.Stderr:
+			case line, open := <-kCmd.Stderr:
 				if !open {
-					envCmd.Stderr = nil
+					kCmd.Stderr = nil
 					continue
 				}
 				fmt.Fprintln(os.Stderr, line)
@@ -163,8 +164,14 @@ func runKubectl(args []string, kspace string, env string) {
 	}()
 
 	// Run and wait for Cmd to return, discard Status
-	// fmt.Println(envCmd)
-	<-envCmd.Start()
+	// fmt.Println(kCmd)
+	fi, _ := os.Stdin.Stat()
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		// Check if k was piped to and pass stdin to kubectl
+		<-kCmd.StartWithStdin(os.Stdin)
+	} else {
+		<-kCmd.Start()
+	}
 
 	// Wait for goroutine to print everything
 	<-doneChan
