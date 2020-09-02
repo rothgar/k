@@ -18,8 +18,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
+
 	// remove command name
 	passedArgs := os.Args[1:]
+	if kDebugBool {
+		fmt.Printf("[DEBUG] Arguments passed: %s\n", passedArgs)
+	}
 
 	// check if KUBE_NAMESPACE is set
 	namespace, envSet := os.LookupEnv("KUBE_NAMESPACE")
@@ -69,8 +74,10 @@ func main() {
 			// TODO use key name for output
 			for name, cluster := range clustersMap {
 				args := passedArgs[1:]
-				// fmt.Println("Detected multiple args")
-				// fmt.Println(clustersMap)
+				if kDebugBool {
+					fmt.Println("[DEBUG] Detected multiple args")
+					fmt.Println(clustersMap)
+				}
 				if cluster.context != "" {
 					// only add context because it contains other info
 					// parsing doesn't currently support overriding context
@@ -88,7 +95,9 @@ func main() {
 					}
 				}
 
-				// fmt.Println(args)
+				if kDebugBool {
+					fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", args)
+				}
 				runKubectl(args, name, kubeEnv)
 			}
 		} else if len(clustersMap) == 1 {
@@ -113,11 +122,15 @@ func main() {
 				}
 			}
 
-			// fmt.Println(args)
+			if kDebugBool {
+				fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", args)
+			}
 			runKubectl(args, "", kubeEnv)
 		}
 	} else {
-		// fmt.Println(passedArgs)
+		if kDebugBool {
+			fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", passedArgs)
+		}
 		runKubectl(passedArgs, "", kubeEnv)
 	}
 }
@@ -164,7 +177,11 @@ func runKubectl(args []string, kspace string, env string) {
 	}()
 
 	// Run and wait for Cmd to return, discard Status
-	// fmt.Println(kCmd)
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
+	if kDebugBool {
+		// fmt.Sprintf("[DEBUG] Running command: %s\n", kCmd)
+		// fmt.Println(kCmd)
+	}
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
 		// Check if k was piped to and pass stdin to kubectl
@@ -204,9 +221,12 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 	maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,.\-@]+)`), s), ",")  // capture between @ and : or $
 	maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")           // capture between : and $
 
-	// fmt.Println("maybeContext: ", maybeContext, len(maybeContext))
-	// fmt.Println("maybeNamespace: ", maybeNamespace, len(maybeNamespace))
-	// fmt.Println("maybeCluster: ", maybeCluster, len(maybeCluster))
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
+	if kDebugBool {
+		fmt.Println("Context: ", maybeContext)
+		fmt.Println("Namespace: ", maybeNamespace)
+		fmt.Println("Cluster: ", maybeCluster)
+	}
 
 	if maybeContext[0] != "" {
 		// check if we have more than 1 namespace
@@ -215,7 +235,6 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 				for _, ns := range maybeNamespace {
 					// run if given 1 or more context and 1 or more namespace
 					tmpName = "+" + ctx + ":" + ns
-					// fmt.Println(tmpName)
 					tmpCluster.context = ctx
 					tmpCluster.namespace = ns
 					kSpace[tmpName] = tmpCluster
@@ -236,7 +255,6 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 				for _, ns := range maybeNamespace {
 					// run if given 1 or more context and 1 or more namespace
 					tmpName = "@" + cl + ":" + ns
-					// fmt.Println(tmpName)
 					tmpCluster.context = getContextFromCluster(cl, env)
 					tmpCluster.cluster = cl
 					tmpCluster.namespace = ns
@@ -275,22 +293,29 @@ func getContextFromCluster(s string, env string) string {
 
 	var context string
 
+	// execute self
 	envCmd := cmd.NewCmd("kubectl", "config", "get-contexts")
-	// fmt.Println(envCmd)
 	envCmd.Env = append(envCmd.Env, env)
 
 	// Run and wait for Cmd to return Status
 	status := <-envCmd.Start()
 
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
 	// Print each line of STDOUT from Cmd
 	for i, line := range status.Stdout {
 		if i > 0 {
 			//skip header
-			// fmt.Println(strings.Fields(trimFirstRune(line))[1])
+			if kDebugBool {
+				fmt.Printf("[DEBUG] Looking for %s in %s\n", s, strings.Fields(trimFirstRune(line))[1])
+
+			}
 			contextMatch, _ := regexp.MatchString(strings.Fields(trimFirstRune(line))[1], s)
 			if contextMatch {
 				context = strings.Fields(trimFirstRune(line))[0]
-				// fmt.Println(context)
+				if kDebugBool {
+					fmt.Printf("[DEBUG] Found context: %s\n", context)
+
+				}
 			}
 		}
 	}
@@ -387,6 +412,7 @@ Environment Variables:
 	e.g. KUBE_NAMESPACE=kube-system k get pod -n default
 	  This example will get pods in the default namespace.
 
+	K_DEBUG:        troubleshoot k wrapper
 	KUBE_NAMESPACE: sets the --namespace argument
 	KUBE_CONTEXT:   sets the --context argument
 
