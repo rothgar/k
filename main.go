@@ -11,6 +11,12 @@ import (
 	"github.com/go-cmd/cmd"
 )
 
+var shellPattern *regexp.Regexp
+
+func init() {
+	shellPattern = regexp.MustCompile(`[^\w@%+=:,./-]`)
+}
+
 func main() {
 
 	if len(os.Args) == 1 {
@@ -21,7 +27,11 @@ func main() {
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
 
 	// remove command name
-	passedArgs := os.Args[1:]
+	var passedArgs []string
+
+	for _, arg := range os.Args[1:] {
+		passedArgs = append(passedArgs, escape(arg))
+	}
 	if kDebugBool {
 		fmt.Printf("[DEBUG] Arguments passed: %s\n", passedArgs)
 	}
@@ -146,6 +156,8 @@ func runKubectl(args []string, kspace string, env string) {
 	// Create Cmd with options
 	kCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
 	kCmd.Env = os.Environ()
+	// kCmd.Env = append(kCmd.Env, "PATH="+os.Getenv("PATH"))
+	// kCmd.Env = append(kCmd.Env, "AWS_DEFAULT_PROFILE="+os.Getenv("AWS_DEFAULT_PROFILE"))
 	kCmd.Env = append(kCmd.Env, env)
 
 	// Print STDOUT and STDERR lines streaming from Cmd
@@ -380,6 +392,26 @@ func sliceFind(slice []string, val string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+func escape(s string) string {
+	// taken from https://github.com/alessio/shellescape/blob/master/shellescape.go
+	// with slight modification
+	if len(s) == 0 {
+		return "''"
+	}
+	if shellPattern.MatchString(s) {
+		if strings.Contains(s, "=") {
+			// We make the assumption the arg only has 1 "="
+			// e.g. foo=bar
+			ss := strings.Split(s, "=")
+			ss[1] = "'" + ss[1] + "'"
+			return strings.Join(ss, "=")
+		}
+		return "'" + strings.Replace(s, "'", "'\"'\"'", -1) + "'"
+	}
+
+	return s
 }
 
 func usage() {
