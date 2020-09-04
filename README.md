@@ -122,4 +122,4 @@ Otherwise you'll get authentication errors.
  - [ ] Support wildcard searching for all kspace arguments
  - [ ] Tab completion for kspace keywords
  - [ ] Support multiple kspaces for `exec` in parallel
- - [ ] Support `K_DEBUG` for debug printing
+ - [ x ] Support `K_DEBUG` for debug printing

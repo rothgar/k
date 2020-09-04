@@ -86,7 +86,7 @@ func main() {
 				args := passedArgs[1:]
 				if kDebugBool {
 					fmt.Println("[DEBUG] Detected multiple args")
-					fmt.Println(clustersMap)
+					// fmt.Println(clustersMap)
 				}
 				if cluster.context != "" {
 					// only add context because it contains other info
@@ -175,7 +175,7 @@ func runKubectl(args []string, kspace string, env string) {
 					continue
 				}
 				if kspace != "" {
-					fmt.Println(kspace, line)
+					fmt.Printf("%s\t%s\n", kspace, line)
 				} else {
 					fmt.Println(line)
 				}
@@ -236,9 +236,9 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
 	if kDebugBool {
-		fmt.Println("Context: ", maybeContext)
-		fmt.Println("Namespace: ", maybeNamespace)
-		fmt.Println("Cluster: ", maybeCluster)
+		fmt.Println("[DEBUG] Parsed context(s): ", strings.Join(maybeContext, " "))
+		fmt.Println("[DEBUG] Parsed namespace(s): ", strings.Join(maybeNamespace, " "))
+		fmt.Println("[DEBUG] Parsed cluster(s): ", strings.Join(maybeCluster, " "))
 	}
 
 	if maybeContext[0] != "" {
