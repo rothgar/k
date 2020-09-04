@@ -30,7 +30,7 @@ func main() {
 	var passedArgs []string
 
 	for _, arg := range os.Args[1:] {
-		passedArgs = append(passedArgs, escape(arg))
+		passedArgs = append(passedArgs, arg)
 	}
 	if kDebugBool {
 		fmt.Printf("[DEBUG] Arguments passed: %s\n", passedArgs)
@@ -156,9 +156,10 @@ func runKubectl(args []string, kspace string, env string) {
 	// Create Cmd with options
 	kCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
 	kCmd.Env = os.Environ()
+	// kCmd.Env = append(kCmd.Env, "HOME="+os.Getenv("HOME"))
 	// kCmd.Env = append(kCmd.Env, "PATH="+os.Getenv("PATH"))
 	// kCmd.Env = append(kCmd.Env, "AWS_DEFAULT_PROFILE="+os.Getenv("AWS_DEFAULT_PROFILE"))
-	kCmd.Env = append(kCmd.Env, env)
+	// kCmd.Env = append(kCmd.Env, env)
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
@@ -405,7 +406,7 @@ func escape(s string) string {
 			// We make the assumption the arg only has 1 "="
 			// e.g. foo=bar
 			ss := strings.Split(s, "=")
-			ss[1] = "'" + ss[1] + "'"
+			ss[len(ss)-1] = "'" + ss[len(ss)-1] + "'"
 			return strings.Join(ss, "=")
 		}
 		return "'" + strings.Replace(s, "'", "'\"'\"'", -1) + "'"
@@ -439,6 +440,10 @@ Examples:
 	k @prod:kube-system get pods
 	Runs: kubectl --context prod --namespace kube-system get pods
 
+	k :default,kube-system get svc
+	Runs: kubectl --namespace default get svc
+	      kubectl --namespace kube-system get svc
+
 Environment Variables:
 	Setting the flags manually will override the environment variable.
 	e.g. KUBE_NAMESPACE=kube-system k get pod -n default
@@ -466,7 +471,7 @@ Environment Variables:
 	your contexts or clusters have the characters '@', ':', or '+' in
 	their name.
 
-	To print kubectl help use k --help
+	To print kubectl help use k help
 `
 	Version := "devel"
 	fmt.Printf("%s", usage)
