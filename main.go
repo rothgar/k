@@ -1,20 +1,22 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unicode/utf8"
-
-	"github.com/go-cmd/cmd"
 )
 
 var shellPattern *regexp.Regexp
+var kubeEnv string
 
 func init() {
 	shellPattern = regexp.MustCompile(`[^\w@%+=:,./-]`)
+	checkKubectlExists()
 }
 
 func main() {
@@ -53,8 +55,6 @@ func main() {
 			passedArgs = append(passedArgs, "--context", context)
 		}
 	}
-
-	var kubeEnv string
 
 	// check if KUBECONFIG is NOT set
 	// we don't set the argument if KUBECONFIG is explicitly set
@@ -106,7 +106,7 @@ func main() {
 				}
 
 				if kDebugBool {
-					fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", args)
+					fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 				}
 				runKubectl(args, name, kubeEnv)
 			}
@@ -133,13 +133,13 @@ func main() {
 			}
 
 			if kDebugBool {
-				fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", args)
+				fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 			}
 			runKubectl(args, "", kubeEnv)
 		}
 	} else {
 		if kDebugBool {
-			fmt.Printf("[DEBUG] Passing argumets to kubectl: %s\n", passedArgs)
+			fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(passedArgs, " "))
 		}
 		runKubectl(passedArgs, "", kubeEnv)
 	}
@@ -147,64 +147,53 @@ func main() {
 
 func runKubectl(args []string, kspace string, env string) {
 
-	// Disable output buffering, enable streaming
-	cmdOptions := cmd.Options{
-		Buffered:  false,
-		Streaming: true,
+	// Create Cmd with options
+	kCmd := exec.Command("kubectl", args...)
+	// set Env to nil to get Env from parent
+	kCmd.Env = nil
+
+	fi, _ := os.Stdin.Stat()
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		// Check if k was piped to and pass stdin to kubectl
+		kCmd.Stdin = os.Stdin
 	}
 
-	// Create Cmd with options
-	kCmd := cmd.NewCmdOptions(cmdOptions, "kubectl", args...)
-	kCmd.Env = os.Environ()
-	// kCmd.Env = append(kCmd.Env, "HOME="+os.Getenv("HOME"))
-	// kCmd.Env = append(kCmd.Env, "PATH="+os.Getenv("PATH"))
-	// kCmd.Env = append(kCmd.Env, "AWS_DEFAULT_PROFILE="+os.Getenv("AWS_DEFAULT_PROFILE"))
-	// kCmd.Env = append(kCmd.Env, env)
+	stdout, _ := kCmd.StdoutPipe()
+	stderr, _ := kCmd.StderrPipe()
+	// Create a scanner which scans r in a line-by-line fashion
+	stdoutscanner := bufio.NewScanner(stdout)
+	stderrscanner := bufio.NewScanner(stderr)
 
 	// Print STDOUT and STDERR lines streaming from Cmd
 	doneChan := make(chan struct{})
 	go func() {
 		defer close(doneChan)
-		// Done when both channels have been closed
-		// https://dave.cheney.net/2013/04/30/curious-channels
-		for kCmd.Stdout != nil || kCmd.Stderr != nil {
-			select {
-			case line, open := <-kCmd.Stdout:
-				if !open {
-					kCmd.Stdout = nil
-					continue
-				}
-				if kspace != "" {
-					fmt.Printf("%s\t%s\n", kspace, line)
-				} else {
-					fmt.Println(line)
-				}
-			case line, open := <-kCmd.Stderr:
-				if !open {
-					kCmd.Stderr = nil
-					continue
-				}
-				fmt.Fprintln(os.Stderr, line)
+		// Read line by line and process it
+		for stdoutscanner.Scan() {
+			line := stdoutscanner.Text()
+			if kspace != "" {
+				fmt.Printf("%s\t%s\n", kspace, line)
+			} else {
+				fmt.Println(line)
 			}
 		}
+		for stderrscanner.Scan() {
+			line := stderrscanner.Text()
+			if kspace != "" {
+				fmt.Printf("%s\t%s\n", kspace, line)
+			} else {
+				fmt.Println(line)
+			}
+		}
+
+		// We're all done, unblock the channel
+		doneChan <- struct{}{}
+
 	}()
-
-	// Run and wait for Cmd to return, discard Status
-	_, kDebugBool := os.LookupEnv("K_DEBUG")
-	if kDebugBool {
-		// fmt.Sprintf("[DEBUG] Running command: %s\n", kCmd)
-		// fmt.Println(kCmd)
+	err := kCmd.Run()
+	if err != nil {
+		log.Printf("error: %v", err)
 	}
-	fi, _ := os.Stdin.Stat()
-	if (fi.Mode() & os.ModeCharDevice) == 0 {
-		// Check if k was piped to and pass stdin to kubectl
-		<-kCmd.StartWithStdin(os.Stdin)
-	} else {
-		<-kCmd.Start()
-	}
-
-	// Wait for goroutine to print everything
-	<-doneChan
 }
 
 func captureFirst(r *regexp.Regexp, s string) string {
@@ -305,39 +294,46 @@ func getContextFromCluster(s string, env string) string {
 	// reads in a cluster string and KUBECONFIG env
 
 	var context string
+	template := "{{ range .contexts  }}{{ printf \"%s %s\\n\" .name .context.cluster }}{{ end  }}"
 
 	// execute self
-	envCmd := cmd.NewCmd("kubectl", "config", "get-contexts")
-	envCmd.Env = append(envCmd.Env, env)
+	ctxCmd := exec.Command("kubectl", "config", "view", "--output", "template", "--template", template)
+	ctxCmd.Env = append(os.Environ(),
+		"KUBECONFIG="+kubeEnv,
+	)
+	ctxCmd.Stderr = os.Stderr
 
 	// Run and wait for Cmd to return Status
-	status := <-envCmd.Start()
+	ctxOutput, err := ctxCmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := ctxCmd.Start(); err != nil {
+		log.Fatal(err)
+	}
 
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
-	// Print each line of STDOUT from Cmd
-	for i, line := range status.Stdout {
-		if i > 0 {
-			//skip header
+
+	scanner := bufio.NewScanner(ctxOutput)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if kDebugBool {
+			fmt.Printf("[DEBUG] Looking for %s in %s\n", s, strings.Fields(line))
+		}
+
+		contextMatch, _ := regexp.MatchString(strings.Fields(line)[1], s)
+		if contextMatch {
+			context = strings.Fields(line)[0]
 			if kDebugBool {
-				fmt.Printf("[DEBUG] Looking for %s in %s\n", s, strings.Fields(trimFirstRune(line))[1])
-
+				fmt.Printf("[DEBUG] Found context: %s\n", context)
 			}
-			contextMatch, _ := regexp.MatchString(strings.Fields(trimFirstRune(line))[1], s)
-			if contextMatch {
-				context = strings.Fields(trimFirstRune(line))[0]
-				if kDebugBool {
-					fmt.Printf("[DEBUG] Found context: %s\n", context)
-
-				}
-			}
+			break
 		}
 	}
+	if err := ctxCmd.Wait(); err != nil {
+		log.Fatal(err)
+	}
 	return context
-}
-
-func trimFirstRune(s string) string {
-	_, i := utf8.DecodeRuneInString(s)
-	return s[i:]
 }
 
 /*
@@ -395,24 +391,13 @@ func sliceFind(slice []string, val string) (int, bool) {
 	return -1, false
 }
 
-func escape(s string) string {
-	// taken from https://github.com/alessio/shellescape/blob/master/shellescape.go
-	// with slight modification
-	if len(s) == 0 {
-		return "''"
+func checkKubectlExists() {
+	_, err := exec.LookPath("kubectl")
+	if err != nil {
+		fmt.Printf("didn't find 'kubectl' executable\n")
+		os.Exit(1)
 	}
-	if shellPattern.MatchString(s) {
-		if strings.Contains(s, "=") {
-			// We make the assumption the arg only has 1 "="
-			// e.g. foo=bar
-			ss := strings.Split(s, "=")
-			ss[len(ss)-1] = "'" + ss[len(ss)-1] + "'"
-			return strings.Join(ss, "=")
-		}
-		return "'" + strings.Replace(s, "'", "'\"'\"'", -1) + "'"
-	}
-
-	return s
+	return
 }
 
 func usage() {
