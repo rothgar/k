@@ -22,7 +22,7 @@ builds:
   env:
     - CGO_ENABLED=0
   ldflags:
-    - -s -w -X 'github.com/rothgar/k/main.version={{.Version}}'
+    - -s -w -X 'main.version={{.Version}}'
 
 archives:
 - builds:

@@ -11,8 +11,11 @@ import (
 	"strings"
 )
 
-var shellPattern *regexp.Regexp
-var kubeEnv string
+var (
+	shellPattern *regexp.Regexp
+	kubeEnv      = ""
+	version      = "devel"
+)
 
 func init() {
 	shellPattern = regexp.MustCompile(`[^\w@%+=:,./-]`)
@@ -458,9 +461,8 @@ Environment Variables:
 
 	To print kubectl help use k help
 `
-	Version := "devel"
 	fmt.Printf("%s", usage)
-	fmt.Printf("\tk version: \t%s\n", Version)
+	fmt.Printf("\tk version: \t%s\n", version)
 }
 
 // TODO: figure out how to handle interrupts when using --watch
