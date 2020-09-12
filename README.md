@@ -1,16 +1,16 @@
 # k
 
 `k` is an experimental wrapper for kubectl.
-It does not explicitly take any arguments unless the first argument has 
+It does not explicitly take any arguments unless the first argument starts with a special character `+`, `@`, or `:`.
 
 `k` does not implement any functionallity from `kubectl` but rather adds arguments and makes switching contexts easier for multi-cluster management.
 - `KUBE_NAMESPACE` and `KUBE_CONTEXT` will automatically append `--namespace` and `--context` to your `kubectl` command.
-- `KUBECONFIG` (if not already set or passed with `--kubeconfig`) is automatically generated from all files in $HOME/.kube directory.
+- `KUBECONFIG` (if not explicitly set in your environment or passed with `--kubeconfig`) is automatically generated from all files in $HOME/.kube directory.
 - Shorthand for context (`+`), cluster (`@`), and namespace (`:`) can be used as the first argument for faster context switching. Combine multiple contexts, clusters, and namespaces into a single `k` command with comma separated keywords (see examples).
 
 `k` passes all arguments to `kubectl`.
 To print help use `k` by itself.
-`kubectl` help output can be printed with `kubectl help`
+`kubectl` help output can be printed with `k help`
 
 ## Install
 
@@ -118,7 +118,29 @@ Otherwise you'll get authentication errors.
     value: demo
 ```
 
+## Troubleshooting
+
+If you find a problem with `k` please try setting `K_DEBUG=1` in your environment and running your command again.
+
+```
+K_DEBUG=1 k +stage get po
+K_DEBUG=1 k @stage.us-west-2.eksctl.io get po
+[DEBUG] Arguments passed: [@stage.us-west-2.eksctl.io get po]
+[DEBUG] Using KUBECONFIG: KUBECONFIG=/home/rothgar/.kube/config:/home/rothgar/.kube/eksctl/clusters/fargate:/home/rothgar/.kube/eksctl/clusters/stage
+[DEBUG] Parsed context(s):
+[DEBUG] Parsed namespace(s):
+[DEBUG] Parsed cluster(s):  stage.us-west-2.eksctl.io
+[DEBUG] Looking for stage.us-west-2.eksctl.io in [fargate fargate.uw2]
+[DEBUG] Looking for stage.us-west-2.eksctl.io in [rothgar@stage.us-west-2.eksctl.io stage.us-west-2.eksctl.io]
+[DEBUG] Found context: rothgar@stage.us-west-2.eksctl.io
+[DEBUG] Running: kubectl get po --context rothgar@stage.us-west-2.eksctl.io
+NAME                                                       READY   STATUS             RESTARTS   AGE
+frontend-687b58699c-bqqct                                  1/1     Running            0          3d6h
+crashy-0                                                   0/1     CrashLoopBackOff   2107       7d11h
+```
+
 ## TODO
+
  - [ ] Support wildcard searching for all kspace arguments
  - [ ] Tab completion for kspace keywords
  - [ ] Support multiple kspaces for `exec` in parallel
