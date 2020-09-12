@@ -4,9 +4,9 @@
 It does not explicitly take any arguments unless the first argument starts with a special character `+`, `@`, or `:`.
 
 `k` does not implement any functionallity from `kubectl` but rather adds arguments and makes switching contexts easier for multi-cluster management.
+- Shorthand for context (`+`), cluster (`@`), and namespace (`:`) can be used as the first argument for faster context switching. Combine multiple contexts, clusters, and namespaces into a single `k` command with comma separated keywords (see [examples](#examples)).
 - `KUBE_NAMESPACE` and `KUBE_CONTEXT` will automatically append `--namespace` and `--context` to your `kubectl` command.
 - `KUBECONFIG` (if not explicitly set in your environment or passed with `--kubeconfig`) is automatically generated from all files in $HOME/.kube directory.
-- Shorthand for context (`+`), cluster (`@`), and namespace (`:`) can be used as the first argument for faster context switching. Combine multiple contexts, clusters, and namespaces into a single `k` command with comma separated keywords (see examples).
 
 `k` passes all arguments to `kubectl`.
 To print help use `k` by itself.
@@ -24,6 +24,12 @@ Or you can install with `go get` if you hate having your software automatically 
 
 ```
 go get github.com/rothgar/k
+```
+
+After you install k you should alias kubectl to k so copy/paste commands will use k for KUBECONFIG and KUBE_* variables.
+
+```
+alias kubectl=k
 ```
 
 ## Examples
