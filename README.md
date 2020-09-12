@@ -145,9 +145,18 @@ frontend-687b58699c-bqqct                                  1/1     Running      
 crashy-0                                                   0/1     CrashLoopBackOff   2107       7d11h
 ```
 
-## TODO
+## Devel
 
- - [ ] Support wildcard searching for all kspace arguments
- - [ ] Tab completion for kspace keywords
- - [ ] Support multiple kspaces for `exec` in parallel
- - [x] Support `K_DEBUG` for debug printing
+You can bulid k locally with
+
+```
+go build -o k main.go
+```
+
+Releases are done with [goreleaser](https://github.com/goreleaser/goreleaser).
+Tag a release and then run
+
+```
+export GITHUB_TOKEN=XXXXXXXXXXXX
+goreleaser r --rm-dist
+```
