@@ -76,9 +76,17 @@ k @kind,dev apply -f deploy.yaml
 #       kubectl apply -f deploy.yaml --context dev
 ```
 
-When multiple `kubectl` commands are run all output is combined with a special `KSPACE` variable which represents the arguments provided from the cli.
+When multiple `kubectl` commands are run all output is prepended with a `KSPACE` variable which represents the arguments provided from the cli.
 ```
-SAMPLE OUTPUT
+k @prod,stage:kube-system get po
+@prod:kube-system   NAME                       READY   STATUS    RESTARTS   AGE
+@prod:kube-system   aws-node-5vntp             1/1     Running   0          16d
+@prod:kube-system   kube-proxy-w5ppt           1/1     Running   0          16d
+...
+@stage:kube-system  NAME                                      READY   STATUS             RESTARTS   AGE
+@stage:kube-system  aws-node-2m48z                            1/1     Running            0          15d
+@stage:kube-system  aws-node-2x77f                            1/1     Running            0          2d8h
+...
 ```
 
 `+context` and `@cluster` are mutually exclusive because context names may have `@` symbols in them.
