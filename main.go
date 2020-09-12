@@ -37,9 +37,6 @@ func main() {
 	for _, arg := range os.Args[1:] {
 		passedArgs = append(passedArgs, arg)
 	}
-	if kDebugBool {
-		fmt.Printf("[DEBUG] Arguments passed: %s\n", passedArgs)
-	}
 
 	// check if KUBE_NAMESPACE is set
 	namespace, envSet := os.LookupEnv("KUBE_NAMESPACE")
@@ -70,6 +67,10 @@ func main() {
 	} else {
 		kubeEnv = os.Getenv("KUBECONFIG")
 	}
+	if kDebugBool {
+		fmt.Printf("[DEBUG] Arguments passed: %s\n", passedArgs)
+		fmt.Printf("[DEBUG] Using KUBECONFIG: %s\n", kubeEnv)
+	}
 
 	// check if the first arg is special syntax
 	// can specify
@@ -82,7 +83,7 @@ func main() {
 	// +context:namespace
 	if strings.ContainsAny(passedArgs[0], "+@:") {
 
-		clustersMap, kSpaceNames := ParseCluster(passedArgs[0], kubeEnv)
+		clustersMap, kSpaceNames := ParseCluster(passedArgs[0])
 		if len(clustersMap) > 1 {
 			// TODO use key name for output
 			for name, cluster := range clustersMap {
@@ -111,7 +112,7 @@ func main() {
 				if kDebugBool {
 					fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 				}
-				runKubectl(args, name, kubeEnv)
+				runKubectl(args, name)
 			}
 		} else if len(clustersMap) == 1 {
 			// cluster should be of type cluster
@@ -138,22 +139,25 @@ func main() {
 			if kDebugBool {
 				fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 			}
-			runKubectl(args, "", kubeEnv)
+			runKubectl(args, "")
 		}
 	} else {
 		if kDebugBool {
 			fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(passedArgs, " "))
 		}
-		runKubectl(passedArgs, "", kubeEnv)
+		runKubectl(passedArgs, "")
 	}
 }
 
-func runKubectl(args []string, kspace string, env string) {
+func runKubectl(args []string, kspace string) {
 
 	// Create Cmd with options
 	kCmd := exec.Command("kubectl", args...)
 	// set Env to nil to get Env from parent
 	kCmd.Env = nil
+	kCmd.Env = append(os.Environ(),
+		"KUBECONFIG="+kubeEnv,
+	)
 
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
@@ -211,7 +215,7 @@ func captureFirst(r *regexp.Regexp, s string) string {
 // It attempts to parse the following patterns
 // [@cluster][,cluster][:namespace][,namespace]
 // [+context][,context][:namespace][,namespace]
-func ParseCluster(s string, env string) (map[string]Cluster, []string) {
+func ParseCluster(s string) (map[string]Cluster, []string) {
 	kSpace := make(map[string]Cluster)
 
 	var tmpCluster Cluster
@@ -260,7 +264,7 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 				for _, ns := range maybeNamespace {
 					// run if given 1 or more context and 1 or more namespace
 					tmpName = "@" + cl + ":" + ns
-					tmpCluster.context = getContextFromCluster(cl, env)
+					tmpCluster.context = getContextFromCluster(cl)
 					tmpCluster.cluster = cl
 					tmpCluster.namespace = ns
 					kSpace[tmpName] = tmpCluster
@@ -271,7 +275,7 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 			for _, cl := range maybeCluster {
 				tmpName = "@" + cl
 				tmpCluster.cluster = cl
-				tmpCluster.context = getContextFromCluster(cl, env)
+				tmpCluster.context = getContextFromCluster(cl)
 				kSpace[tmpName] = tmpCluster
 			}
 		}
@@ -293,8 +297,8 @@ func ParseCluster(s string, env string) (map[string]Cluster, []string) {
 	return kSpace, kNames
 }
 
-func getContextFromCluster(s string, env string) string {
-	// reads in a cluster string and KUBECONFIG env
+func getContextFromCluster(s string) string {
+	// reads in a cluster string
 
 	var context string
 	template := "{{ range .contexts  }}{{ printf \"%s %s\\n\" .name .context.cluster }}{{ end  }}"
