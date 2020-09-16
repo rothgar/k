@@ -13,19 +13,10 @@ function __k_parse_config() {
     # Use lead_char in output so each variable has it
     template="{{ range .$1  }}$lead_char{{ .name }} {{ end }}"
 
-    # # Use this path if adding more clusters or contexts
-    # if [[ "$cur" == *, ]]; then
-    #     grep_exclude_pattern=$(echo $cur | tr -d $lead_char | tr ',' '|')
-    #     if kubectl_out=$(__kubectl_debug_out "k config $(__kubectl_override_flags) -o template --template=\"${template}\" view" \
-    #         grep -E -v $grep_exclude_pattern); then
-    #         COMPREPLY=( $( compgen -W "${kubectl_out[*]}" ) ); compopt -o nospace;
-    #     fi
-    # else
-        # ${cur##*,} removes everything up to and including ,
-        if k_out=$(k config view -o template --template="${template}"); then
-            COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}" ) ); compopt -o nospace;
-        fi
-    # fi
+    # ${cur##*,} removes everything up to and including ,
+    if k_out=$(k config view -o template --template="${template}"); then
+        COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}" ) ); compopt -o nospace;
+    fi
 }
 __k_parse_get() {
     # echo $cur ${cur#:}
@@ -51,7 +42,7 @@ __k_get_resource_namespace()
     __k_parse_get "namespace"
 }
 
-function _k_completions() {
+__k_handle_kspace() {
 
     # set -x
     local cur prefix;
@@ -70,7 +61,9 @@ function _k_completions() {
     case $cur in
     # start with most specific matches and go toward general matches
     # because case is processed in order
-    *,* )
+    :*,* | *:*,* )
+        # This will match for multiple namespaces
+        #
         # remove a leading colon from the prefix
         # because otherwise each tab complete will add it to the front
         # because we're using _get_comp_words_by_ref -n :
@@ -83,30 +76,69 @@ function _k_completions() {
         # more $cur manipulation happens in this function
         __k_get_resource_namespace
         # add the prefix back to the matched value
-        COMPREPLY=(${COMPREPLY/#/$prefix})
+        # ${COMPREPLY[@]/#/prefix} will add the current line back to each
+        # element in the COMPREPLY array
+        # Using ${prefix#*:} removes everything before the : so we make
+        # sure we only add the namespaces because : is considered a new arg
+        # even though everything before it is part of $cur
+        COMPREPLY=( "${COMPREPLY[@]/#/${prefix#*:}}" )
         ;;
     :* )
+        # This matches for standalone :namespace
         __k_get_resource_namespace
         ;;
     *:* )
+        # This matches for +context:namespace or @cluster:namespace
         [[ $cur == *,* ]] && prefix="${cur%,*},"
         __k_get_resource_namespace
-        COMPREPLY=(${COMPREPLY/#/$prefix})
+        COMPREPLY=( "${COMPREPLY[@]/#/$prefix}" )
         ;;
     +* )
-        [[ $cur == *,* ]] && prefix="${cur%,*},"
+        # This will match contexts without namespaces
         __k_parse_config_contexts
-        ((${#COMPREPLY[@]} != 1)) && COMPREPLY=(${COMPREPLY/#/$prefix})
         ;;
     @* )
+        # This will match clusters without namespaces
         __k_parse_config_clusters
         ;;
     * )
-        # echo \ngot $prev $cur and $words
+        # Don't do anything for arguments not in this list
         ;;
     esac
     # set +x
 
 }
 
-complete -F _k_completions k
+__k_handle_word()
+{
+    local kspace_words=( : @ + )
+    if __k_contains_word "${kspace_words[@]}"; then
+        __k_handle_kspace
+    fi
+    if [[ $c -ge $cword ]]; then
+        __k_handle_reply
+        return
+    fi
+    __k_debug "${FUNCNAME[0]}: c is $c words[c] is ${words[c]}"
+    if [[ "${words[c]}" == -* ]]; then
+        __k_handle_flag
+    elif __k_contains_word "${words[c]}" "${commands[@]}"; then
+        __k_handle_command
+    elif [[ $c -eq 0 ]]; then
+        __k_handle_command
+    elif __k_contains_word "${words[c]}" "${command_aliases[@]}"; then
+        # aliashash variable is an associative array which is only supported in bash > 3.
+        if [[ -z "${BASH_VERSION}" || "${BASH_VERSINFO[0]}" -gt 3 ]]; then
+            words[c]=${aliashash[${words[c]}]}
+            __k_handle_command
+        else
+            __k_handle_noun
+        fi
+    else
+        __k_handle_noun
+    fi
+    __k_handle_word
+}
+
+# This will run the standard kubectl completion script
+# kubectl completion bash | sed 's/kubectl/k/g'
