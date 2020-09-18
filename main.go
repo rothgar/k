@@ -422,7 +422,7 @@ func usage() {
 	usage := `k - kubectl wrapper for advanced usage
 
 Usage:
-	k ( @cluster... | +cluster... )[:namespace[,namespace]] <kubectl options>
+	k ( @cluster... | +context... )[:namespace[,namespace]] <kubectl options>
 	k <kubectl options>
 
 k is a wrapper for kubectl that makes using multiple clusters, namespaces,
@@ -473,8 +473,7 @@ Environment Variables:
 	for automation or in scripts.
 
 	WARNING 2: Argument parsing will have unpredictable behavior if
-	your contexts or clusters have the characters '@', ':', or '+' in
-	their name.
+	your contexts or clusters have a colon in their name.
 
 	To print kubectl help use k help
 `
