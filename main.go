@@ -81,13 +81,22 @@ func main() {
 	// user@cluster:namespace
 	// +context
 	// +context:namespace
-	if strings.ContainsAny(passedArgs[0], "+@:") {
+	kspacePrefixes := []string{"@", "+", ":"}
+	var kspaces []string
+	var args []string
+	for _, arg := range passedArgs {
+		if hasPrefixAny(arg, kspacePrefixes) {
+			kspaces = append(kspaces, arg)
+		} else {
+			args = append(args, arg)
+		}
+	}
+	if len(kspaces) > 0 {
 
-		clustersMap, kSpaceNames := ParseCluster(passedArgs[0])
+		clustersMap, kSpaceNames := ParseCluster(kspaces)
 		if len(clustersMap) > 1 {
 			// TODO use key name for output
 			for name, cluster := range clustersMap {
-				args := passedArgs[1:]
 				if kDebugBool {
 					fmt.Println("[DEBUG] Detected multiple args")
 					// fmt.Println(clustersMap)
@@ -213,9 +222,9 @@ func captureFirst(r *regexp.Regexp, s string) string {
 
 // ParseCluster is the main function to parse the first argument given to k
 // It attempts to parse the following patterns
-// [@cluster][,cluster][:namespace][,namespace]
-// [+context][,context][:namespace][,namespace]
-func ParseCluster(s string) (map[string]Cluster, []string) {
+// [@cluster][:namespace][,namespace]
+// [+context][:namespace][,namespace]
+func ParseCluster(kspaces []string) (map[string]Cluster, []string) {
 	kSpace := make(map[string]Cluster)
 
 	var tmpCluster Cluster
@@ -225,65 +234,67 @@ func ParseCluster(s string) (map[string]Cluster, []string) {
 	var maybeCluster []string
 	var maybeNamespace []string
 
-	// I'm sorry. Regex was the easiest way to parse a string
-	maybeContext = strings.Split(captureFirst(regexp.MustCompile(`(?:\+)([0-9A-Za-z_,.\-@]+)`), s), ",") // capture between + and : or $
-	maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,.\-@]+)`), s), ",")  // capture between @ and : or $
-	maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")           // capture between : and $
+	for _, s := range kspaces {
+		// I'm sorry. Regex was the easiest way to parse a string
+		maybeContext = strings.Split(captureFirst(regexp.MustCompile(`(?:\+)([0-9A-Za-z_,.\-@]+)`), s), ",") // capture between + and : or $
+		maybeCluster = strings.Split(captureFirst(regexp.MustCompile(`(?:@)([0-9A-Za-z_,.\-@]+)`), s), ",")  // capture between @ and : or $
+		maybeNamespace = strings.Split(captureFirst(regexp.MustCompile(`(?::)(.+)(?:$)`), s), ",")           // capture between : and $
 
-	_, kDebugBool := os.LookupEnv("K_DEBUG")
-	if kDebugBool {
-		fmt.Println("[DEBUG] Parsed context(s): ", strings.Join(maybeContext, " "))
-		fmt.Println("[DEBUG] Parsed namespace(s): ", strings.Join(maybeNamespace, " "))
-		fmt.Println("[DEBUG] Parsed cluster(s): ", strings.Join(maybeCluster, " "))
-	}
+		_, kDebugBool := os.LookupEnv("K_DEBUG")
+		if kDebugBool {
+			fmt.Println("[DEBUG] Parsed context(s): ", strings.Join(maybeContext, " "))
+			fmt.Println("[DEBUG] Parsed namespace(s): ", strings.Join(maybeNamespace, " "))
+			fmt.Println("[DEBUG] Parsed cluster(s): ", strings.Join(maybeCluster, " "))
+		}
 
-	if maybeContext[0] != "" {
-		// check if we have more than 1 namespace
-		if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
-			for _, ctx := range maybeContext {
-				for _, ns := range maybeNamespace {
-					// run if given 1 or more context and 1 or more namespace
-					tmpName = "+" + ctx + ":" + ns
+		if maybeContext[0] != "" {
+			// check if we have more than 1 namespace
+			if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
+				for _, ctx := range maybeContext {
+					for _, ns := range maybeNamespace {
+						// run if given 1 or more context and 1 or more namespace
+						tmpName = "+" + ctx + ":" + ns
+						tmpCluster.context = ctx
+						tmpCluster.namespace = ns
+						kSpace[tmpName] = tmpCluster
+					}
+				}
+			} else {
+				// No namespace given
+				for _, ctx := range maybeContext {
+					tmpName = "+" + ctx
 					tmpCluster.context = ctx
-					tmpCluster.namespace = ns
 					kSpace[tmpName] = tmpCluster
 				}
 			}
-		} else {
-			// No namespace given
-			for _, ctx := range maybeContext {
-				tmpName = "+" + ctx
-				tmpCluster.context = ctx
-				kSpace[tmpName] = tmpCluster
-			}
-		}
 
-	} else if maybeCluster[0] != "" {
-		if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
-			for _, cl := range maybeCluster {
-				for _, ns := range maybeNamespace {
-					// run if given 1 or more context and 1 or more namespace
-					tmpName = "@" + cl + ":" + ns
-					tmpCluster.context = getContextFromCluster(cl)
+		} else if maybeCluster[0] != "" {
+			if len(maybeNamespace) > 0 && maybeNamespace[0] != "" {
+				for _, cl := range maybeCluster {
+					for _, ns := range maybeNamespace {
+						// run if given 1 or more context and 1 or more namespace
+						tmpName = "@" + cl + ":" + ns
+						tmpCluster.context = getContextFromCluster(cl)
+						tmpCluster.cluster = cl
+						tmpCluster.namespace = ns
+						kSpace[tmpName] = tmpCluster
+					}
+				}
+			} else {
+				// No namespace given
+				for _, cl := range maybeCluster {
+					tmpName = "@" + cl
 					tmpCluster.cluster = cl
-					tmpCluster.namespace = ns
+					tmpCluster.context = getContextFromCluster(cl)
 					kSpace[tmpName] = tmpCluster
 				}
 			}
-		} else {
-			// No namespace given
-			for _, cl := range maybeCluster {
-				tmpName = "@" + cl
-				tmpCluster.cluster = cl
-				tmpCluster.context = getContextFromCluster(cl)
+		} else if maybeNamespace[0] != "" {
+			for _, ns := range maybeNamespace {
+				tmpName = ":" + ns
+				tmpCluster.namespace = ns
 				kSpace[tmpName] = tmpCluster
 			}
-		}
-	} else if maybeNamespace[0] != "" {
-		for _, ns := range maybeNamespace {
-			tmpName = ":" + ns
-			tmpCluster.namespace = ns
-			kSpace[tmpName] = tmpCluster
 		}
 	}
 
@@ -410,8 +421,8 @@ func checkKubectlExists() {
 func usage() {
 	usage := `k - kubectl wrapper for advanced usage
 
-Usage:  k [@cluster][:namespace] <kubectl options>
-	k [+context][:namespace] <kubectl options>
+Usage:
+	k ( @cluster... | +cluster... )[:namespace[,namespace]] <kubectl options>
 	k <kubectl options>
 
 k is a wrapper for kubectl that makes using multiple clusters, namespaces,
@@ -426,10 +437,12 @@ Examples:
 	k :kube-public apply -f pod.yaml
 	Runs: kubectl apply -f pod.yaml --namespace kube-public
 
-	k +us-east-1 cluster-info
+	k +us-east-1 +us-west-2 cluster-info
 	Runs: kubectl --context us-east-1 cluster-info
+		  kubectl --context us-west-2 cluster-info
 
 	k @prod:kube-system get pods
+	# @cluster will look up the name of a context with "cluster"
 	Runs: kubectl --context prod --namespace kube-system get pods
 
 	k :default,kube-system get svc
@@ -469,6 +482,11 @@ Environment Variables:
 	fmt.Printf("\tk version: \t%s\n", version)
 }
 
-// TODO: figure out how to handle interrupts when using --watch
-// TODO: figure out how to handle exec (especially with multiple commands)
-// TODO: align column output
+func hasPrefixAny(s string, pslice []string) bool {
+	for _, prefix := range pslice {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
