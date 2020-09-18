@@ -62,7 +62,7 @@ k +us-east-1:nginx get pods
 
 Combine multiple clusters, contexts, and namespaces with commas.
 ```
-k +us-east-1 +us-west-2:default:nginx get pods
+k +us-east-1 +us-west-2:default,nginx get pods
 # RUNS: kubectl get pods --context us-east-1
 #       kubectl get pods --context us-west-2 --namespace default
 #       kubectl get pods --context us-west-2 --namespace nginx
