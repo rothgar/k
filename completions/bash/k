@@ -1,0 +1,303 @@
+#/usr/bin/env bash
+
+# This will run the standard kubectl completion script
+. <(kubectl completion bash | sed 's/kubectl/k/g')
+
+__k_kspace_parse_config() {
+    local template k_out lead_char
+
+    # There's probably a beter way to keep the + or @ after tab completion
+    case $1 in
+    contexts )
+        lead_char='+' ;;
+    clusters )
+        lead_char='@' ;;
+    esac
+
+    # Use lead_char in output so each variable has it
+    template="{{ range .$1  }}$lead_char{{ .name }} {{ end }}"
+
+    # ${cur##*,} removes everything up to and including ,
+    # we call k so that KUBECONFIG will be properly set
+    # we don't need ${cur%%:*} because we're looking up clusters and contexts
+    if k_out=$(k config view -o template --template="${template}"); then
+        COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}" ) )
+        # use this so we don't have a space after the cluster/context
+        # in case we want to add :namespace
+        compopt -o nospace
+    fi
+}
+
+__k_kspace_parse_get() {
+    local template
+    template="${2:-"{{ range .items  }}{{ .metadata.name }} {{ end }}"}"
+    local k_out
+    # ${cur%%:*} removes everything after (and including) : so we can lookup the correct namespaces
+    # right now $1 should always be "namespace"
+    if k_out=$(k ${cur%%:*} get -o template --template="${template}" "$1"); then
+        # remove the leading : for filtering compgen
+        cur=${cur#*:}
+        # ${cur##*,} removes everything up to the first comma so ":default,kube" becomes "kube"
+        COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}") )
+        # don't add a space after the namespace
+        compopt -o nospace
+    fi
+}
+
+__k_kspace_parse_config_contexts() {
+    __k_kspace_parse_config "contexts"
+}
+__k_kspace_parse_config_clusters() {
+    __k_kspace_parse_config "clusters"
+}
+__k_kspace_get_resource_namespace()
+{
+    __k_kspace_parse_get "namespace"
+}
+
+__k_handle_kspace() {
+
+    # set -x
+    local cur prefix;
+    # set the current arg
+    # prefix is used if we need to match part of the arg but want to
+    # return a complete line. +context:na<tab> should complete namespace
+    # but we need the full line to have +context: as part of the prefix
+    #
+    # _init_completion doesn't like args that start with :
+    # so we use _get_comp_words_by_ref and exclude : from COMP_WORDBREAKS
+    # ":default" with _init_completion would become prev=: cur=default
+    # in this case cur=:default
+    _get_comp_words_by_ref -n : cur || return
+
+    # try to find a pattern match for the current argument
+    case $cur in
+    # start with most specific matches and go toward general matches
+    # because case is processed in order
+    :*,* | *:*,* )
+        # This will match for multiple namespaces
+        #
+        # remove a leading colon from the prefix
+        # because otherwise each tab complete will add it to the front
+        # because we're using _get_comp_words_by_ref -n :
+        # ${cur#:} removes the shortest leading match which will only be
+        # a leading : in this case
+        cur=${cur#:}
+        # $cur matches *,* so we want our prefix to be
+        # everything before the last comma (adding a comma)
+        prefix="${cur%,*},"
+        # more $cur manipulation happens in this function
+        __k_kspace_get_resource_namespace
+        # add the prefix back to the matched value
+        # ${COMPREPLY[@]/#/prefix} will add the current line back to each
+        # element in the COMPREPLY array
+        # Using ${prefix#*:} removes everything before the : so we make
+        # sure we only add the namespaces because : is considered a new arg
+        # even though everything before it is part of $cur
+        COMPREPLY=( "${COMPREPLY[@]/#/${prefix#*:}}" )
+        ;;
+    :* )
+        # This matches for standalone :namespace
+        __k_get_resource_namespace
+        ;;
+    *:* )
+        # This matches for +context:namespace or @cluster:namespace
+        [[ $cur == *,* ]] && prefix="${cur%,*},"
+        __k_kspace_get_resource_namespace
+        COMPREPLY=( "${COMPREPLY[@]/#/$prefix}" )
+        ;;
+    +* )
+        # This will match contexts without namespaces
+        __k_kspace_parse_config_contexts
+        ;;
+    @* )
+        # This will match clusters without namespaces
+        __k_kspace_parse_config_clusters
+        ;;
+    * )
+        # Don't do anything for arguments not in this list
+        ;;
+    esac
+    # set +x
+
+}
+
+# re-declare _k_root_command to override the default
+# from kubectl completion bash
+_k_root_command()
+{
+    last_command="k"
+
+    command_aliases=()
+
+    commands=()
+    commands+=("alpha")
+    commands+=("annotate")
+    commands+=("api-resources")
+    commands+=("api-versions")
+    commands+=("apply")
+    commands+=("attach")
+    commands+=("auth")
+    commands+=("autoscale")
+    commands+=("certificate")
+    commands+=("cluster-info")
+    commands+=("completion")
+    commands+=("config")
+    commands+=("convert")
+    commands+=("cordon")
+    commands+=("cp")
+    commands+=("create")
+    commands+=("delete")
+    commands+=("describe")
+    commands+=("diff")
+    commands+=("drain")
+    commands+=("edit")
+    commands+=("exec")
+    commands+=("explain")
+    commands+=("expose")
+    commands+=("get")
+    commands+=("kustomize")
+    commands+=("label")
+    commands+=("logs")
+    commands+=("options")
+    commands+=("patch")
+    commands+=("plugin")
+    commands+=("port-forward")
+    commands+=("proxy")
+    commands+=("replace")
+    commands+=("rollout")
+    commands+=("run")
+    commands+=("scale")
+    commands+=("set")
+    commands+=("taint")
+    commands+=("top")
+    commands+=("uncordon")
+    commands+=("version")
+    commands+=("wait")
+    # Need to add our kspace options here
+    commands+=("@")
+    commands+=("+")
+    commands+=(":")
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--add-dir-header")
+    flags+=("--alsologtostderr")
+    flags+=("--as=")
+    two_word_flags+=("--as")
+    flags+=("--as-group=")
+    two_word_flags+=("--as-group")
+    flags+=("--cache-dir=")
+    two_word_flags+=("--cache-dir")
+    flags+=("--certificate-authority=")
+    two_word_flags+=("--certificate-authority")
+    flags+=("--client-certificate=")
+    two_word_flags+=("--client-certificate")
+    flags+=("--client-key=")
+    two_word_flags+=("--client-key")
+    flags+=("--cluster=")
+    two_word_flags+=("--cluster")
+    flags_with_completion+=("--cluster")
+    flags_completion+=("__k_config_get_clusters")
+    flags+=("--context=")
+    two_word_flags+=("--context")
+    flags_with_completion+=("--context")
+    flags_completion+=("__k_config_get_contexts")
+    flags+=("--insecure-skip-tls-verify")
+    flags+=("--kubeconfig=")
+    two_word_flags+=("--kubeconfig")
+    flags+=("--log-backtrace-at=")
+    two_word_flags+=("--log-backtrace-at")
+    flags+=("--log-dir=")
+    two_word_flags+=("--log-dir")
+    flags+=("--log-file=")
+    two_word_flags+=("--log-file")
+    flags+=("--log-file-max-size=")
+    two_word_flags+=("--log-file-max-size")
+    flags+=("--log-flush-frequency=")
+    two_word_flags+=("--log-flush-frequency")
+    flags+=("--logtostderr")
+    flags+=("--match-server-version")
+    flags+=("--namespace=")
+    two_word_flags+=("--namespace")
+    flags_with_completion+=("--namespace")
+    flags_completion+=("__k_get_resource_namespace")
+    two_word_flags+=("-n")
+    flags_with_completion+=("-n")
+    flags_completion+=("__k_get_resource_namespace")
+    flags+=("--password=")
+    two_word_flags+=("--password")
+    flags+=("--profile=")
+    two_word_flags+=("--profile")
+    flags+=("--profile-output=")
+    two_word_flags+=("--profile-output")
+    flags+=("--request-timeout=")
+    two_word_flags+=("--request-timeout")
+    flags+=("--server=")
+    two_word_flags+=("--server")
+    two_word_flags+=("-s")
+    flags+=("--skip-headers")
+    flags+=("--skip-log-headers")
+    flags+=("--stderrthreshold=")
+    two_word_flags+=("--stderrthreshold")
+    flags+=("--tls-server-name=")
+    two_word_flags+=("--tls-server-name")
+    flags+=("--token=")
+    two_word_flags+=("--token")
+    flags+=("--user=")
+    two_word_flags+=("--user")
+    flags_with_completion+=("--user")
+    flags_completion+=("__k_config_get_users")
+    flags+=("--username=")
+    two_word_flags+=("--username")
+    flags+=("--v=")
+    two_word_flags+=("--v")
+    two_word_flags+=("-v")
+    flags+=("--vmodule=")
+    two_word_flags+=("--vmodule")
+    flags+=("--warnings-as-errors")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+# re-declare __k_handle_word to add kspace characters
+__k_handle_word()
+{
+    # Override this part because we need to handle kspace options
+    local kspace_words=( @ : + )
+    for char in @ : +; do
+        if [[ ${words[c]} = $char* ]]; then
+            __k_handle_kspace
+        fi
+    done
+    # continue regular kubectl argument parsing
+    if [[ $c -ge $cword ]]; then
+        __k_handle_reply
+        return
+    fi
+    __k_debug "${FUNCNAME[0]}: c is $c words[c] is ${words[c]}"
+    if [[ "${words[c]}" == -* ]]; then
+        __k_handle_flag
+    elif __k_contains_word "${words[c]}" "${commands[@]}"; then
+        __k_handle_command
+    elif [[ $c -eq 0 ]]; then
+        __k_handle_command
+    elif __k_contains_word "${words[c]}" "${command_aliases[@]}"; then
+        # aliashash variable is an associative array which is only supported in bash > 3.
+        if [[ -z "${BASH_VERSION}" || "${BASH_VERSINFO[0]}" -gt 3 ]]; then
+            words[c]=${aliashash[${words[c]}]}
+            __k_handle_command
+        else
+            __k_handle_noun
+        fi
+    else
+        __k_handle_noun
+    fi
+    __k_handle_word
+}

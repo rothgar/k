@@ -3,12 +3,12 @@
 `k` is an experimental wrapper for kubectl.
 It does not explicitly take any arguments unless the first argument starts with a special character `+`, `@`, or `:`.
 
-`k` does not implement any functionallity from `kubectl` but rather adds arguments and makes switching contexts easier for multi-cluster management.
-- Shorthand for context (`+`), cluster (`@`), and namespace (`:`) can be used as the first argument for faster context switching. Combine multiple contexts, clusters, and namespaces into a single `k` command with comma separated keywords (see [examples](#examples)).
+`k` does not change `kubectl` but rather adds arguments (called kspace) and makes switching contexts easier for multi-cluster management.
+- Add shorthand for context (`+`), cluster (`@`), and namespace (`:`) can be used for faster context switching. Combine multiple contexts, clusters, and namespaces into a single `k` command (see [examples](#examples)).
 - `KUBE_NAMESPACE` and `KUBE_CONTEXT` will automatically append `--namespace` and `--context` to your `kubectl` command.
-- `KUBECONFIG` (if not explicitly set in your environment or passed with `--kubeconfig`) is automatically generated from all files in $HOME/.kube directory.
+- `KUBECONFIG` is automatically generated from all files in $HOME/.kube directory if not explicitly set in your environment or passed with `--kubeconfig`.
 
-`k` passes all arguments to `kubectl`.
+`k` passes all arguments not prefixed with `@`, `+`, or `:` to `kubectl`.
 To print help use `k` by itself.
 `kubectl` help output can be printed with `k help`
 
@@ -46,7 +46,7 @@ k +prod get pods --all-namespaces
 # RUNS: kubectl get pods --all-namespaces --context prod
 ```
 
-When you run `k @cluster` it will first run `kubectl get contexts` (using a combined KUBECONFIG if necessary) and find the requested cluster and which context is associated with that cluster.
+When you run `k @cluster` it will first run `kubectl get contexts` (using a combined `KUBECONFIG` if necessary) and find the requested cluster and which context is associated with that cluster.
 It will then run `kubectl` with the requested context.
 If you have a "test" context that has a "test" cluster
 ```
@@ -62,23 +62,22 @@ k +us-east-1:nginx get pods
 
 Combine multiple clusters, contexts, and namespaces with commas.
 ```
-k +us-east-1,us-west-2:default:nginx get pods
-# RUNS: kubectl get pods --context us-east-1 --namespace default
-#       kubectl get pods --context us-east-1 --namespace nginx
+k +us-east-1 +us-west-2:default:nginx get pods
+# RUNS: kubectl get pods --context us-east-1
 #       kubectl get pods --context us-west-2 --namespace default
 #       kubectl get pods --context us-west-2 --namespace nginx
 ```
 
 Or deploy to multiple clusters at once
 ```
-k @kind,dev apply -f deploy.yaml
+k @kind @dev apply -f deploy.yaml
 # RUNS: kubectl apply -f deploy.yaml --context kind
 #       kubectl apply -f deploy.yaml --context dev
 ```
 
 When multiple `kubectl` commands are run all output is prepended with a `KSPACE` variable which represents the arguments provided from the cli.
 ```
-k @prod,stage:kube-system get po
+k @prod:kube-system @stage:kube-system get po
 @prod:kube-system   NAME                       READY   STATUS    RESTARTS   AGE
 @prod:kube-system   aws-node-5vntp             1/1     Running   0          16d
 @prod:kube-system   kube-proxy-w5ppt           1/1     Running   0          16d
@@ -89,8 +88,8 @@ k @prod,stage:kube-system get po
 ...
 ```
 
-`+context` and `@cluster` are mutually exclusive because context names may have `@` symbols in them.
 ```
+# "prod@test" is the name of a context in this command
 k +prod@test:istio-system get cm
 # RUNS: kubectl get cm --context prod@test --namespace istio-system
 ```
