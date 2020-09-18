@@ -98,7 +98,7 @@ __k_handle_kspace() {
         ;;
     :* )
         # This matches for standalone :namespace
-        __k_get_resource_namespace
+        __k_kspace_get_resource_namespace
         ;;
     *:* )
         # This matches for +context:namespace or @cluster:namespace
@@ -274,6 +274,7 @@ __k_handle_word()
     for char in @ : +; do
         if [[ ${words[c]} = $char* ]]; then
             __k_handle_kspace
+            return
         fi
     done
     # continue regular kubectl argument parsing
