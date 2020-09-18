@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestParseClusterSingleContext(t *testing.T) {
-	cluster, names := ParseCluster("+prod")
+	cluster, names := ParseCluster([]string{"+prod"})
 
 	if names[0] != "+prod" {
 		t.Errorf("kSpace Name incorrect: got %s, want +prod", names[0])
@@ -15,7 +15,7 @@ func TestParseClusterSingleContext(t *testing.T) {
 }
 
 func TestParseClusterMultipleContexts(t *testing.T) {
-	cluster, names := ParseCluster("+prod,stage")
+	cluster, names := ParseCluster([]string{"+prod", "+stage"})
 
 	if len(names) != 2 {
 		t.Errorf("Incorrect names length: got %d, want 2", len(names))
