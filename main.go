@@ -12,13 +12,12 @@ import (
 )
 
 var (
-	shellPattern *regexp.Regexp
-	kubeEnv      = ""
-	version      = "devel"
+	kubeEnv = ""
+	version = "devel"
 )
 
 func init() {
-	shellPattern = regexp.MustCompile(`[^\w@%+=:,./-]`)
+	log.SetFlags(0)
 	_, err := exec.LookPath("kubectl")
 	if err != nil {
 		log.Fatalln(err)
@@ -214,7 +213,12 @@ func runKubectl(args []string, kspace string) {
 	}()
 	err = kCmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		// stderr is already attached so we don't need to print anything here
+		// I'm not positive we should exit. If multiple kubectls are run
+		// should the entire k command show an error?
+		if exitError, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitError.ExitCode())
+		}
 	}
 }
 
@@ -415,6 +419,15 @@ func sliceFind(slice []string, val string) (int, bool) {
 	return -1, false
 }
 
+func hasPrefixAny(s string, pslice []string) bool {
+	for _, prefix := range pslice {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func usage() {
 	usage := `k - kubectl wrapper for advanced usage
 
@@ -476,13 +489,4 @@ Environment Variables:
 `
 	fmt.Printf("%s", usage)
 	fmt.Printf("\tk version: \t%s\n", version)
-}
-
-func hasPrefixAny(s string, pslice []string) bool {
-	for _, prefix := range pslice {
-		if strings.HasPrefix(s, prefix) {
-			return true
-		}
-	}
-	return false
 }
