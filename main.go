@@ -19,7 +19,10 @@ var (
 
 func init() {
 	shellPattern = regexp.MustCompile(`[^\w@%+=:,./-]`)
-	checkKubectlExists()
+	_, err := exec.LookPath("kubectl")
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func main() {
@@ -174,8 +177,14 @@ func runKubectl(args []string, kspace string) {
 		kCmd.Stdin = os.Stdin
 	}
 
-	stdout, _ := kCmd.StdoutPipe()
-	stderr, _ := kCmd.StderrPipe()
+	stdout, err := kCmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stderr, err := kCmd.StderrPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
 	// Create a scanner which scans r in a line-by-line fashion
 	stdoutscanner := bufio.NewScanner(stdout)
 	stderrscanner := bufio.NewScanner(stderr)
@@ -202,13 +211,10 @@ func runKubectl(args []string, kspace string) {
 			}
 		}
 
-		// We're all done, unblock the channel
-		doneChan <- struct{}{}
-
 	}()
-	err := kCmd.Run()
+	err = kCmd.Run()
 	if err != nil {
-		log.Printf("error: %v", err)
+		log.Fatal(err)
 	}
 }
 
@@ -407,15 +413,6 @@ func sliceFind(slice []string, val string) (int, bool) {
 		}
 	}
 	return -1, false
-}
-
-func checkKubectlExists() {
-	_, err := exec.LookPath("kubectl")
-	if err != nil {
-		fmt.Printf("didn't find 'kubectl' executable\n")
-		os.Exit(1)
-	}
-	return
 }
 
 func usage() {
