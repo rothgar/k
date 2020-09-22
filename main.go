@@ -405,7 +405,7 @@ func buildKubeconfig() (kc string) {
 		fmt.Printf("error walking the path")
 		return
 	}
-	return "KUBECONFIG=" + strings.TrimSuffix(kubeconfig, ":")
+	return strings.TrimSuffix(kubeconfig, ":")
 }
 
 // sliceFind takes a slice and looks for an element in it. If found it will
