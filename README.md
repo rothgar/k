@@ -1,4 +1,6 @@
-# k
+<p align="center">
+  <img src="/img/banner.jpg" />
+</p>
 
 `k` is an experimental wrapper for kubectl.
 It does not explicitly take any arguments unless the first argument starts with a special character `+`, `@`, or `:`.
