@@ -1,4 +1,1 @@
-FROM gitpod/workspace-base
-
-# Install custom tools, runtime, etc.
-RUN brew install kubernetes-cli
+FROM ubuntu:21.04
