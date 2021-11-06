@@ -1,4 +1,8 @@
 image: gitpod/workspace-full
+tasks:
+  - name: install deps
+    before: brew install kubernetes-cli
+    
 vscode:
   extensions:
     - "golang.Go"
