@@ -5,6 +5,7 @@ tasks:
       brew install kubernetes-cli starship
       echo "eval $(starship init bash)" >> ~/.bashrc
       echo "eval $(starship init zsh)" >> ~/.zshrc
+    command: zsh
     
 vscode:
   extensions:
