@@ -1,7 +1,10 @@
 image: gitpod/workspace-full
 tasks:
   - name: install deps
-    before: brew install kubernetes-cli
+    before: |
+      brew install kubernetes-cli starship
+      echo "eval $(starship init bash)" >> ~/.bashrc
+      echo "eval $(starship init zsh)" >> ~/.zshrc
     
 vscode:
   extensions:
