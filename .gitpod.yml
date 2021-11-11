@@ -8,7 +8,7 @@ tasks:
       gp sync-done install
     command: zsh
   - name: create kind cluster
-    init: gp sync-wait install
+    init: gp sync-await install
     command: kind create cluster
     
 vscode:
