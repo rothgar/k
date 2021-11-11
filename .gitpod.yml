@@ -9,7 +9,7 @@ tasks:
     command: zsh
   - name: create kind cluster
     before: gp sync-await install
-    command: kind create cluster
+    command: bash -c "kind create cluster"
     
 vscode:
   extensions:
