@@ -5,11 +5,7 @@ tasks:
       brew install kubernetes-cli starship kind
       echo "eval $(starship init bash)" >> ~/.bashrc
       echo "eval $(starship init zsh)" >> ~/.zshrc
-    init: gp sync-done install
     command: zsh
-  - name: create kind cluster
-    before: gp sync-await install
-    command: bash -c "kind create cluster"
     
 vscode:
   extensions:
