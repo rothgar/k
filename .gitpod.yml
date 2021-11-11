@@ -1,11 +1,11 @@
 image: gitpod/workspace-full
 tasks:
   - name: install deps
-    before: >
+    before: |
       brew install kubernetes-cli starship kind
       echo "eval $(starship init bash)" >> ~/.bashrc
       echo "eval $(starship init zsh)" >> ~/.zshrc
-      gp sync-done install
+    init: gp sync-done install
     command: zsh
   - name: create kind cluster
     init: gp sync-await install
