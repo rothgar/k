@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	kubeEnv = ""
-	version = "devel"
+	kubeEnv       = ""
+	version       = "devel"
+	kubectlBinary = ""
 )
 
 func init() {
@@ -32,6 +33,11 @@ func main() {
 	}
 
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
+	kubectlBinary, _ := exec.LookPath("kubecolor")
+
+	// if kubectlBinary != "" {
+	// kubectlBinary, _ := exec.LookPath("kubectl")
+	// }
 
 	// remove command name
 	var passedArgs []string
@@ -123,7 +129,7 @@ func main() {
 				if kDebugBool {
 					fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 				}
-				runKubectl(args, name)
+				runKubectl(args, name, kubectlBinary)
 			}
 		} else if len(clustersMap) == 1 {
 			// cluster should be of type cluster
@@ -150,20 +156,20 @@ func main() {
 			if kDebugBool {
 				fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
 			}
-			runKubectl(args, "")
+			runKubectl(args, "", kubectlBinary)
 		}
 	} else {
 		if kDebugBool {
 			fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(passedArgs, " "))
 		}
-		runKubectl(passedArgs, "")
+		runKubectl(passedArgs, "", kubectlBinary)
 	}
 }
 
-func runKubectl(args []string, kspace string) {
+func runKubectl(args []string, kspace string, kubectlBinary string) {
 
 	// Create Cmd with options
-	kCmd := exec.Command("kubectl", args...)
+	kCmd := exec.Command(kubectlBinary, args...)
 	// set Env to nil to get Env from parent
 	kCmd.Env = nil
 	kCmd.Env = append(os.Environ(),
@@ -284,7 +290,7 @@ func ParseCluster(kspaces []string) (map[string]Cluster, []string) {
 					for _, ns := range maybeNamespace {
 						// run if given 1 or more context and 1 or more namespace
 						tmpName = "@" + cl + ":" + ns
-						tmpCluster.context = getContextFromCluster(cl)
+						tmpCluster.context = getContextFromCluster(cl, kubectlBinary)
 						tmpCluster.cluster = cl
 						tmpCluster.namespace = ns
 						kSpace[tmpName] = tmpCluster
@@ -295,7 +301,7 @@ func ParseCluster(kspaces []string) (map[string]Cluster, []string) {
 				for _, cl := range maybeCluster {
 					tmpName = "@" + cl
 					tmpCluster.cluster = cl
-					tmpCluster.context = getContextFromCluster(cl)
+					tmpCluster.context = getContextFromCluster(cl, kubectlBinary)
 					kSpace[tmpName] = tmpCluster
 				}
 			}
@@ -318,14 +324,14 @@ func ParseCluster(kspaces []string) (map[string]Cluster, []string) {
 	return kSpace, kNames
 }
 
-func getContextFromCluster(s string) string {
+func getContextFromCluster(s string, kubectlBinary string) string {
 	// reads in a cluster string
 
 	var context string
 	template := "{{ range .contexts  }}{{ printf \"%s %s\\n\" .name .context.cluster }}{{ end  }}"
 
 	// execute self
-	ctxCmd := exec.Command("kubectl", "config", "view", "--output", "template", "--template", template)
+	ctxCmd := exec.Command(kubectlBinary, "config", "view", "--output", "template", "--template", template)
 	ctxCmd.Env = append(os.Environ(),
 		"KUBECONFIG="+kubeEnv,
 	)
@@ -376,28 +382,38 @@ type Cluster struct {
 
 func buildKubeconfig() (kc string) {
 	var kubeconfig string
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
 
+	// TODO XDG_HOME
 	err := filepath.Walk(os.Getenv("HOME")+"/.kube", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
 			return err
 		}
-		if info.IsDir() && (info.Name() == "cache" || info.Name() == "http-cache") {
-			// fmt.Printf("skipping a dir without errors: %+v \n", info.Name())
-			return filepath.SkipDir
+		if kDebugBool {
+			fmt.Printf("Found: %+v \n", info.Name())
 		}
-		// fmt.Printf("visited file or dir: %q\n", path)
-		if !info.IsDir() {
-			// fmt.Println(info.Name())
-			if len(kubeconfig) == 0 {
-				// no kubeconfig set yet
-				kubeconfig = path
-			} else {
-				if path != "" {
-					kubeconfig = kubeconfig + ":" + path
+		if info.IsDir() && (info.Name() == "cache" ||
+			info.Name() == "http-cache" ||
+			info.Name() == "kubens") {
+			if kDebugBool {
+				fmt.Printf("skipping without errors: %+v \n", info.Name())
+			}
+			return filepath.SkipDir
+		} else {
+			if !info.IsDir() &&
+				info.Name() != "kubectx" &&
+				!strings.Contains(info.Name(), ".lock") {
+				// fmt.Println("appending" + info.Name())
+				if len(kubeconfig) == 0 {
+					// no kubeconfig set yet
+					kubeconfig = path
+				} else {
+					if path != "" {
+						kubeconfig = kubeconfig + ":" + path
+					}
 				}
 			}
-
 		}
 		return nil
 	})
