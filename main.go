@@ -382,28 +382,38 @@ type Cluster struct {
 
 func buildKubeconfig() (kc string) {
 	var kubeconfig string
+	_, kDebugBool := os.LookupEnv("K_DEBUG")
 
+	// TODO XDG_HOME
 	err := filepath.Walk(os.Getenv("HOME")+"/.kube", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
 			return err
 		}
-		if info.IsDir() && (info.Name() == "cache" || info.Name() == "http-cache") {
-			// fmt.Printf("skipping a dir without errors: %+v \n", info.Name())
-			return filepath.SkipDir
+		if kDebugBool {
+			fmt.Printf("Found: %+v \n", info.Name())
 		}
-		// fmt.Printf("visited file or dir: %q\n", path)
-		if !info.IsDir() {
-			// fmt.Println(info.Name())
-			if len(kubeconfig) == 0 {
-				// no kubeconfig set yet
-				kubeconfig = path
-			} else {
-				if path != "" {
-					kubeconfig = kubeconfig + ":" + path
+		if info.IsDir() && (info.Name() == "cache" ||
+			info.Name() == "http-cache" ||
+			info.Name() == "kubens") {
+			if kDebugBool {
+				fmt.Printf("skipping without errors: %+v \n", info.Name())
+			}
+			return filepath.SkipDir
+		} else {
+			if !info.IsDir() &&
+				info.Name() != "kubectx" &&
+				!strings.Contains(info.Name(), ".lock") {
+				// fmt.Println("appending" + info.Name())
+				if len(kubeconfig) == 0 {
+					// no kubeconfig set yet
+					kubeconfig = path
+				} else {
+					if path != "" {
+						kubeconfig = kubeconfig + ":" + path
+					}
 				}
 			}
-
 		}
 		return nil
 	})
