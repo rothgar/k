@@ -110,12 +110,11 @@ brews:
       owner: rothgar
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      branch: "update-k-{{.Version}}"
       pull_request:
         enabled: true
         draft: false
         base:
-          owner: rothgar
-          name: homebrew-tap
           branch: main
     directory: Formula
     homepage: https://github.com/rothgar/k
