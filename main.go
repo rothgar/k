@@ -46,6 +46,12 @@ func main() {
 		passedArgs = append(passedArgs, arg)
 	}
 
+	// Handle version command - print k version and kubectl version
+	if len(passedArgs) > 0 && passedArgs[0] == "version" {
+		fmt.Printf("k version: %s\n", version)
+		// Continue to kubectl version below
+	}
+
 	// check if KUBE_NAMESPACE is set
 	namespace, envSet := os.LookupEnv("KUBE_NAMESPACE")
 	if envSet {
