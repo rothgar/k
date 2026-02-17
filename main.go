@@ -103,6 +103,10 @@ func main() {
 
 		clustersMap, kSpaceNames := ParseCluster(kspaces)
 		if len(clustersMap) > 1 {
+			// Interactive commands cannot be run against multiple targets
+			if isInteractiveCommand(args) {
+				log.Fatalf("Error: Interactive commands (edit, exec -it, attach, etc.) cannot be run against multiple contexts/clusters/namespaces.\nPlease specify only one target.")
+			}
 			// TODO use key name for output
 			for name, cluster := range clustersMap {
 				if kDebugBool {
@@ -166,6 +170,45 @@ func main() {
 	}
 }
 
+// isInteractiveCommand checks if the kubectl command requires TTY access
+func isInteractiveCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+
+	interactiveCommands := []string{
+		"edit",
+		"attach",
+	}
+
+	// Check if the first arg is an interactive command
+	for _, cmd := range interactiveCommands {
+		if args[0] == cmd {
+			return true
+		}
+	}
+
+	// Check for exec with -it or -ti flags
+	if args[0] == "exec" {
+		for _, arg := range args {
+			if arg == "-it" || arg == "-ti" || arg == "-i" || arg == "-t" {
+				return true
+			}
+		}
+	}
+
+	// Check for run with -it or -ti flags
+	if args[0] == "run" {
+		for _, arg := range args {
+			if arg == "-it" || arg == "-ti" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func runKubectl(args []string, kspace string, kubectlBinary string) {
 
 	// Create Cmd with options
@@ -176,6 +219,22 @@ func runKubectl(args []string, kspace string, kubectlBinary string) {
 		"KUBECONFIG="+kubeEnv,
 	)
 
+	// For interactive commands, directly attach stdin/stdout/stderr
+	if isInteractiveCommand(args) {
+		kCmd.Stdin = os.Stdin
+		kCmd.Stdout = os.Stdout
+		kCmd.Stderr = os.Stderr
+
+		err := kCmd.Run()
+		if err != nil {
+			if exitError, ok := err.(*exec.ExitError); ok {
+				os.Exit(exitError.ExitCode())
+			}
+		}
+		return
+	}
+
+	// For non-interactive commands, use pipes to allow line prefixing
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
 		// Check if k was piped to and pass stdin to kubectl
