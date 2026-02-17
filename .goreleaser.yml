@@ -110,6 +110,13 @@ brews:
       owner: rothgar
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: rothgar
+          name: homebrew-tap
+          branch: main
     directory: Formula
     homepage: https://github.com/rothgar/k
     description: Experimental kubectl wrapper for advanced multi-cluster management
