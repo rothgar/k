@@ -65,7 +65,6 @@ archives:
     files:
       - LICENSE
       - README.md
-      - COMPLETIONS.md
       - src: completions/**/*
         dst: completions
         strip_parent: true
@@ -157,7 +156,7 @@ release:
 
     ### Shell Completions
 
-    See [COMPLETIONS.md](https://github.com/rothgar/k/blob/main/COMPLETIONS.md) for installation instructions.
+    Shell completions for bash, zsh, and fish are included in the archive.
 
   footer: |
     ---
