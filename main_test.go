@@ -48,6 +48,34 @@ func TestParseClusterMultipleContextsWithNamespaces(t *testing.T) {
 	}
 }
 
+func TestIsStreamingCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected bool
+	}{
+		{"get with --watch", []string{"get", "pods", "--watch"}, true},
+		{"get with -w", []string{"get", "pods", "-w"}, true},
+		{"get with --watch-only", []string{"get", "pods", "--watch-only"}, true},
+		{"logs with --follow", []string{"logs", "pod-name", "--follow"}, true},
+		{"logs with -f", []string{"logs", "pod-name", "-f"}, true},
+		{"logs without follow", []string{"logs", "pod-name"}, false},
+		{"get without watch", []string{"get", "pods"}, false},
+		{"apply command", []string{"apply", "-f", "file.yaml"}, false},
+		{"describe command", []string{"describe", "pod", "foo"}, false},
+		{"empty args", []string{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isStreamingCommand(tt.args)
+			if result != tt.expected {
+				t.Errorf("isStreamingCommand(%v) = %v, want %v", tt.args, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsInteractiveCommand(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var (
@@ -215,6 +216,38 @@ func isInteractiveCommand(args []string) bool {
 	return false
 }
 
+// isStreamingCommand checks if the kubectl command streams continuous output
+func isStreamingCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+
+	// Check for --watch or -w flags
+	for _, arg := range args {
+		if arg == "--watch" || arg == "-w" {
+			return true
+		}
+	}
+
+	// Check for logs with --follow or -f
+	if args[0] == "logs" {
+		for _, arg := range args {
+			if arg == "--follow" || arg == "-f" {
+				return true
+			}
+		}
+	}
+
+	// Check for get with --watch-only
+	for _, arg := range args {
+		if arg == "--watch-only" {
+			return true
+		}
+	}
+
+	return false
+}
+
 func runKubectl(args []string, kspace string, kubectlBinary string) {
 
 	// Create Cmd with options
@@ -240,6 +273,27 @@ func runKubectl(args []string, kspace string, kubectlBinary string) {
 		return
 	}
 
+	// For streaming commands (--watch, logs -f), use direct I/O copy
+	// to avoid buffering delays, but still support kspace prefixing
+	if isStreamingCommand(args) && kspace == "" {
+		// Direct attachment for streaming without kspace prefix
+		kCmd.Stdout = os.Stdout
+		kCmd.Stderr = os.Stderr
+
+		fi, _ := os.Stdin.Stat()
+		if (fi.Mode() & os.ModeCharDevice) == 0 {
+			kCmd.Stdin = os.Stdin
+		}
+
+		err := kCmd.Run()
+		if err != nil {
+			if exitError, ok := err.(*exec.ExitError); ok {
+				os.Exit(exitError.ExitCode())
+			}
+		}
+		return
+	}
+
 	// For non-interactive commands, use pipes to allow line prefixing
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
@@ -255,6 +309,55 @@ func runKubectl(args []string, kspace string, kubectlBinary string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// For streaming with kspace prefix, use line-by-line reading
+	// This allows prefixing but may have slight buffering
+	if isStreamingCommand(args) {
+		// Use io.Copy with a prefix writer for streaming commands with kspace
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			reader := bufio.NewReader(stdout)
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+				if kspace != "" {
+					fmt.Printf("%s\t%s", kspace, line)
+				} else {
+					fmt.Print(line)
+				}
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			reader := bufio.NewReader(stderr)
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+				if kspace != "" {
+					fmt.Printf("%s\t%s", kspace, line)
+				} else {
+					fmt.Print(line)
+				}
+			}
+		}()
+
+		if err := kCmd.Start(); err != nil {
+			log.Fatal(err)
+		}
+
+		wg.Wait()
+		kCmd.Wait()
+		return
+	}
+
 	// Create a scanner which scans r in a line-by-line fashion
 	stdoutscanner := bufio.NewScanner(stdout)
 	stderrscanner := bufio.NewScanner(stderr)
