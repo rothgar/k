@@ -1,0 +1,59 @@
+#compdef k
+
+# Source kubectl completion and rename all kubectl references to k
+# This makes the standard kubectl completion work for the k command
+source <(kubectl completion zsh | sed 's/kubectl/k/g')
+
+# Custom completion for k's special syntax (@cluster, +context, :namespace)
+# This extends the kubectl completion with k-specific features
+
+_k_kspace_contexts() {
+    local contexts
+    contexts=(${(f)"$(kubectl config view -o template --template='{{ range .contexts }}+{{ .name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
+    _describe 'contexts' contexts
+}
+
+_k_kspace_clusters() {
+    local clusters
+    clusters=(${(f)"$(kubectl config view -o template --template='{{ range .clusters }}@{{ .name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
+    _describe 'clusters' clusters
+}
+
+_k_kspace_namespaces() {
+    local namespaces context_arg
+    # Extract context from current argument if present
+    context_arg="${words[CURRENT]%%:*}"
+    namespaces=(${(f)"$(kubectl ${context_arg} get namespaces -o template --template='{{ range .items }}:{{ .metadata.name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
+    _describe 'namespaces' namespaces
+}
+
+_k() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    # Check if the current word starts with special k characters
+    case "${words[CURRENT]}" in
+        +*)
+            _k_kspace_contexts
+            return
+            ;;
+        @*)
+            _k_kspace_clusters
+            return
+            ;;
+        :*)
+            _k_kspace_namespaces
+            return
+            ;;
+        *:*)
+            # Context/cluster with namespace
+            _k_kspace_namespaces
+            return
+            ;;
+    esac
+
+    # Fall back to standard kubectl completion (already renamed to k)
+    _kubectl
+}
+
+compdef _k k

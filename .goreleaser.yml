@@ -1,65 +1,168 @@
+# GoReleaser v2 configuration
+version: 2
+
+# Metadata
+project_name: k
+
+# Git configuration
+git:
+  ignore_tags:
+    - nightly
+
+# Before hooks - run tests and tidy dependencies
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+# Build configuration
+builds:
+  - id: k
+    main: ./main.go
+    binary: k
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    # Ignore arm on darwin and windows
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    flags:
+      - -trimpath
+
+# Universal binaries for macOS (combines amd64 + arm64)
+universal_binaries:
+  - id: k
+    replace: true
+    name_template: "k"
+
+# Archives configuration
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - COMPLETIONS.md
+      - src: completions/**/*
+        dst: completions
+        strip_parent: true
+
+# Checksum
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Snapshot configuration (for local builds)
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Changelog configuration
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^style:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Enhancements"
+      regexp: '^.*?enhance(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+# Homebrew tap
+brews:
+  - repository:
+      owner: rothgar
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/rothgar/k
+    description: Experimental kubectl wrapper for advanced multi-cluster management
+    license: Apache-2.0
+    skip_upload: auto
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      bin.install "k"
+      bash_completion.install "completions/k" => "k"
+      zsh_completion.install "completions/_k" => "_k"
+      fish_completion.install "completions/k.fish" => "k.fish"
+    test: |
+      system "#{bin}/k", "--help"
+    dependencies:
+      - name: kubectl
+        type: required
+      - name: kubecolor
+        type: required
+
+# GitHub Release
 release:
   github:
     owner: rothgar
     name: k
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## k {{.Version}}
 
-before:
-  hooks:
-    - go mod tidy
-    - make test
+    kubectl wrapper for advanced multi-cluster management.
 
-builds:
-- id: k
-  main: ./main.go
-  binary: bin/k
-  goos:
-    - windows
-    - darwin
-    - linux
-  goarch:
-    - amd64
-    - arm64
-  env:
-    - CGO_ENABLED=0
-  ldflags:
-    - -s -w -X 'main.version={{.Version}}'
+    ### Installation
 
-archives:
-- builds:
-  - k
-  replacements:
-    darwin: Darwin
-    linux: Linux
-    windows: Windows
-    amd64: x86_64
-  format: tar.gz
-  format_overrides:
-    - goos: windows
-      format: zip
-  files:
-    - completions/bash/k
+    **macOS/Linux (Homebrew):**
+    ```bash
+    brew install rothgar/tap/k
+    ```
 
-brews:
-- tap:
-    owner: rothgar
-    name: homebrew-tap
-  homepage: "https://github.com/rothgar/k"
-  description: "Experimental kubectl wrapper"
-  folder: Formula
-  install: |
-    bin.install "bin/k"
-    bash_completion.install "completions/bash/k"
-  test: |
-    system "#{bin}/k"
-  dependencies:
-    - kubectl
+    **Manual Installation:**
+    Download the appropriate archive for your platform from the assets below and extract it to your PATH.
 
-checksum:
-  name_template: 'checksums.txt'
+    ### Shell Completions
 
-changelog:
-  sort: asc
-  filters:
-    exclude:
-    - '^docs:'
-    - '^test:'
+    See [COMPLETIONS.md](https://github.com/rothgar/k/blob/main/COMPLETIONS.md) for installation instructions.
+
+  footer: |
+    ---
+
+    **Full Changelog**: https://github.com/rothgar/k/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## What's Changed
+    See the changelog below for details.
