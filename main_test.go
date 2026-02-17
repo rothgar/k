@@ -224,3 +224,20 @@ func TestHasPrefixAny(t *testing.T) {
 		})
 	}
 }
+
+func TestParseClusterMultipleNamespaces(t *testing.T) {
+	// Test that multiple namespaces are properly expanded for streaming commands
+	cluster, names := ParseCluster([]string{":default,kube-system"})
+
+	if len(names) != 2 {
+		t.Errorf("Incorrect names length: got %d, want 2", len(names))
+	}
+
+	if cluster[":default"].namespace != "default" {
+		t.Errorf("Namespace incorrect: got %s, want default", cluster[":default"].namespace)
+	}
+
+	if cluster[":kube-system"].namespace != "kube-system" {
+		t.Errorf("Namespace incorrect: got %s, want kube-system", cluster[":kube-system"].namespace)
+	}
+}

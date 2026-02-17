@@ -114,34 +114,46 @@ func main() {
 			if isInteractiveCommand(args) {
 				log.Fatalf("Error: Interactive commands (edit, exec -it, attach, etc.) cannot be run against multiple contexts/clusters/namespaces.\nPlease specify only one target.")
 			}
-			// TODO use key name for output
+
+			// Run commands for multiple targets concurrently
+			var wg sync.WaitGroup
 			for name, cluster := range clustersMap {
-				if kDebugBool {
-					fmt.Println("[DEBUG] Detected multiple args")
-					// fmt.Println(clustersMap)
-				}
-				if cluster.context != "" {
-					// only add context because it contains other info
-					// parsing doesn't currently support overriding context
-					args = append(args, "--context", cluster.context)
-				} else {
-					fmt.Fprintf(os.Stderr, "failed to process %+v\n", cluster)
-					break
-				}
+				wg.Add(1)
+				go func(name string, cluster Cluster) {
+					defer wg.Done()
 
-				if cluster.namespace != "" {
-					if cluster.namespace == "*" {
-						args = append(args, "--all-namespaces")
-					} else {
-						args = append(args, "--namespace", cluster.namespace)
+					// Build args for this specific cluster/context/namespace
+					cmdArgs := make([]string, len(args))
+					copy(cmdArgs, args)
+
+					if kDebugBool {
+						fmt.Printf("[DEBUG] Detected multiple args for %s\n", name)
 					}
-				}
 
-				if kDebugBool {
-					fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(args, " "))
-				}
-				runKubectl(args, name, kubectlBinary)
+					if cluster.context != "" {
+						// only add context because it contains other info
+						// parsing doesn't currently support overriding context
+						cmdArgs = append(cmdArgs, "--context", cluster.context)
+					} else {
+						fmt.Fprintf(os.Stderr, "failed to process %+v\n", cluster)
+						return
+					}
+
+					if cluster.namespace != "" {
+						if cluster.namespace == "*" {
+							cmdArgs = append(cmdArgs, "--all-namespaces")
+						} else {
+							cmdArgs = append(cmdArgs, "--namespace", cluster.namespace)
+						}
+					}
+
+					if kDebugBool {
+						fmt.Printf("[DEBUG] Running: kubectl %s\n", strings.Join(cmdArgs, " "))
+					}
+					runKubectl(cmdArgs, name, kubectlBinary)
+				}(name, cluster)
 			}
+			wg.Wait()
 		} else if len(clustersMap) == 1 {
 			// cluster should be of type cluster
 			cluster := clustersMap[kSpaceNames[0]]
