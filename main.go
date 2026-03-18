@@ -285,17 +285,12 @@ func runKubectl(args []string, kspace string, kubectlBinary string) {
 		return
 	}
 
-	// For streaming commands (--watch, logs -f), use direct I/O copy
-	// to avoid buffering delays, but still support kspace prefixing
-	if isStreamingCommand(args) && kspace == "" {
-		// Direct attachment for streaming without kspace prefix
+	// When no kspace prefix is needed, attach stdout/stderr directly
+	// to preserve TTY (for kubecolor color output) and avoid buffering
+	if kspace == "" {
+		kCmd.Stdin = os.Stdin
 		kCmd.Stdout = os.Stdout
 		kCmd.Stderr = os.Stderr
-
-		fi, _ := os.Stdin.Stat()
-		if (fi.Mode() & os.ModeCharDevice) == 0 {
-			kCmd.Stdin = os.Stdin
-		}
 
 		err := kCmd.Run()
 		if err != nil {
