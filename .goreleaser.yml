@@ -18,7 +18,7 @@ before:
 # Build configuration
 builds:
   - id: k
-    main: ./main.go
+    main: ./
     binary: k
     env:
       - CGO_ENABLED=0
@@ -133,8 +133,6 @@ brews:
       system "#{bin}/k", "--help"
     dependencies:
       - name: kubectl
-        type: required
-      - name: kubecolor
         type: required
 
 # GitHub Release
