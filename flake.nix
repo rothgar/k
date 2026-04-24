@@ -18,8 +18,7 @@
           inherit version;
           src = ./.;
 
-          # After first build, replace this with the actual hash nix reports
-          vendorHash = null;
+          vendorHash = "sha256-VPXiUGmqjmAKl4baWiyHlD/Bh5I5mSbm6uPTXYx5EYA=";
 
           ldflags = [
             "-s"
