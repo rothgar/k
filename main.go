@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -34,11 +35,7 @@ func main() {
 	}
 
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
-	kubectlBinary, _ := exec.LookPath("kubecolor")
-
-	// if kubectlBinary != "" {
-	// kubectlBinary, _ := exec.LookPath("kubectl")
-	// }
+	kubectlBinary, _ = exec.LookPath("kubectl")
 
 	// remove command name
 	var passedArgs []string
@@ -285,15 +282,26 @@ func runKubectl(args []string, kspace string, kubectlBinary string) {
 		return
 	}
 
-	// When no kspace prefix is needed, attach stdout/stderr directly
-	// to preserve TTY (for kubecolor color output) and avoid buffering
+	// When no kspace prefix is needed, pipe stdout through colorizer
 	if kspace == "" {
 		kCmd.Stdin = os.Stdin
-		kCmd.Stdout = os.Stdout
 		kCmd.Stderr = os.Stderr
 
-		err := kCmd.Run()
+		stdout, err := kCmd.StdoutPipe()
 		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := kCmd.Start(); err != nil {
+			log.Fatal(err)
+		}
+
+		if !colorizeOutput(args, stdout, os.Stdout) {
+			// Colorization not supported for this command, copy directly
+			io.Copy(os.Stdout, stdout)
+		}
+
+		if err := kCmd.Wait(); err != nil {
 			if exitError, ok := err.(*exec.ExitError); ok {
 				os.Exit(exitError.ExitCode())
 			}
