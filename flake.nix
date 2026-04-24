@@ -10,7 +10,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        version = "devel";
+        version = builtins.replaceStrings ["\n"] [""] (builtins.readFile ./VERSION);
       in
       {
         packages.default = pkgs.buildGoModule {
