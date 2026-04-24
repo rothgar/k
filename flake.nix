@@ -27,6 +27,9 @@
             "-X main.version=${version}"
           ];
 
+          # Tests require kubectl which isn't available in the nix build sandbox
+          doCheck = false;
+
           nativeBuildInputs = [ pkgs.installShellFiles ];
 
           postInstall = ''
