@@ -104,8 +104,8 @@ changelog:
     - title: Others
       order: 999
 
-# Homebrew tap
-brews:
+# Homebrew cask
+homebrew_casks:
   - repository:
       owner: rothgar
       name: homebrew-tap
@@ -116,7 +116,7 @@ brews:
         draft: false
         base:
           branch: main
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/rothgar/k
     description: Experimental kubectl wrapper for advanced multi-cluster management
     license: Apache-2.0

@@ -567,6 +567,15 @@ func buildKubeconfig() (kc string) {
 	var kubeconfig string
 	_, kDebugBool := os.LookupEnv("K_DEBUG")
 
+	// Always put ~/.kube/config first if it exists
+	defaultConfig := os.Getenv("HOME") + "/.kube/config"
+	if _, err := os.Stat(defaultConfig); err == nil {
+		kubeconfig = defaultConfig
+		if kDebugBool {
+			fmt.Printf("Found default config: %s\n", defaultConfig)
+		}
+	}
+
 	// TODO XDG_HOME
 	err := filepath.Walk(os.Getenv("HOME")+"/.kube", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -586,13 +595,12 @@ func buildKubeconfig() (kc string) {
 		} else {
 			if !info.IsDir() &&
 				info.Name() != "kubectx" &&
+				info.Name() != "config" &&
 				!strings.Contains(info.Name(), ".lock") {
-				// fmt.Println("appending" + info.Name())
-				if len(kubeconfig) == 0 {
-					// no kubeconfig set yet
-					kubeconfig = path
-				} else {
-					if path != "" {
+				if path != "" {
+					if len(kubeconfig) == 0 {
+						kubeconfig = path
+					} else {
 						kubeconfig = kubeconfig + ":" + path
 					}
 				}
