@@ -124,16 +124,6 @@ homebrew_casks:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    install: |
-      bin.install "k"
-      bash_completion.install "completions/k" => "k"
-      zsh_completion.install "completions/_k" => "_k"
-      fish_completion.install "completions/k.fish" => "k.fish"
-    test: |
-      system "#{bin}/k", "--help"
-    dependencies:
-      - name: kubectl
-        type: required
 
 # GitHub Release
 release:
