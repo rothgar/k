@@ -241,3 +241,75 @@ func TestParseClusterMultipleNamespaces(t *testing.T) {
 		t.Errorf("Namespace incorrect: got %s, want kube-system", cluster[":kube-system"].namespace)
 	}
 }
+
+func TestKspaceArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		cluster Cluster
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:    "namespace only keeps current context",
+			args:    []string{"get", "po"},
+			cluster: Cluster{namespace: "kube-system"},
+			want:    []string{"get", "po", "--namespace", "kube-system"},
+		},
+		{
+			name:    "context only",
+			args:    []string{"get", "po"},
+			cluster: Cluster{context: "prod"},
+			want:    []string{"get", "po", "--context", "prod"},
+		},
+		{
+			name:    "context and namespace",
+			args:    []string{"get", "po"},
+			cluster: Cluster{context: "prod", namespace: "kube-system"},
+			want:    []string{"get", "po", "--context", "prod", "--namespace", "kube-system"},
+		},
+		{
+			name:    "all namespaces",
+			args:    []string{"get", "po"},
+			cluster: Cluster{context: "prod", namespace: "*"},
+			want:    []string{"get", "po", "--context", "prod", "--all-namespaces"},
+		},
+		{
+			name:    "cluster with resolved context",
+			args:    []string{"get", "po"},
+			cluster: Cluster{cluster: "prod-cluster", context: "prod"},
+			want:    []string{"get", "po", "--context", "prod"},
+		},
+		{
+			name:    "cluster without context is an error",
+			args:    []string{"get", "po"},
+			cluster: Cluster{cluster: "missing"},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := append([]string(nil), tt.args...)
+			got, err := kspaceArgs(tt.args, tt.cluster)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("kspaceArgs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("kspaceArgs() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("kspaceArgs() = %v, want %v", got, tt.want)
+				}
+			}
+			for i := range orig {
+				if tt.args[i] != orig[i] {
+					t.Fatalf("kspaceArgs() modified its input: %v", tt.args)
+				}
+			}
+		})
+	}
+}

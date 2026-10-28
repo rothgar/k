@@ -120,29 +120,15 @@ func main() {
 				go func(name string, cluster Cluster) {
 					defer wg.Done()
 
-					// Build args for this specific cluster/context/namespace
-					cmdArgs := make([]string, len(args))
-					copy(cmdArgs, args)
-
 					if kDebugBool {
 						fmt.Printf("[DEBUG] Detected multiple args for %s\n", name)
 					}
 
-					if cluster.context != "" {
-						// only add context because it contains other info
-						// parsing doesn't currently support overriding context
-						cmdArgs = append(cmdArgs, "--context", cluster.context)
-					} else {
-						fmt.Fprintf(os.Stderr, "failed to process %+v\n", cluster)
+					// Build args for this specific cluster/context/namespace
+					cmdArgs, err := kspaceArgs(args, cluster)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "%s\t%v\n", name, err)
 						return
-					}
-
-					if cluster.namespace != "" {
-						if cluster.namespace == "*" {
-							cmdArgs = append(cmdArgs, "--all-namespaces")
-						} else {
-							cmdArgs = append(cmdArgs, "--namespace", cluster.namespace)
-						}
 					}
 
 					if kDebugBool {
@@ -153,25 +139,11 @@ func main() {
 			}
 			wg.Wait()
 		} else if len(clustersMap) == 1 {
-			// cluster should be of type cluster
 			cluster := clustersMap[kSpaceNames[0]]
-			// fmt.Println(cluster)
-			args := passedArgs[1:]
-			if cluster.context != "" {
-				// only add context because it contains other info
-				// parsing doesn't currently support overriding context
-				args = append(args, "--context", cluster.context)
-			} else {
-				fmt.Fprintf(os.Stderr, "Failed to process %+v\n", cluster)
-				os.Exit(1)
-			}
-
-			if cluster.namespace != "" {
-				if cluster.namespace == "*" {
-					args = append(args, "--all-namespaces")
-				} else {
-					args = append(args, "--namespace", cluster.namespace)
-				}
+			// args already has the kspace word removed, wherever it was
+			args, err := kspaceArgs(args, cluster)
+			if err != nil {
+				log.Fatalln(err)
 			}
 
 			if kDebugBool {
@@ -185,6 +157,32 @@ func main() {
 		}
 		runKubectl(passedArgs, "", kubectlBinary)
 	}
+}
+
+// kspaceArgs returns a copy of args with the --context, --namespace, or
+// --all-namespaces flags a parsed kspace requires. A kspace with only a
+// namespace adds no --context so kubectl uses the current context. A
+// @cluster whose context lookup failed is an error.
+func kspaceArgs(args []string, cluster Cluster) ([]string, error) {
+	out := make([]string, len(args), len(args)+4)
+	copy(out, args)
+
+	if cluster.context != "" {
+		// only add context because it contains other info
+		// parsing doesn't currently support overriding context
+		out = append(out, "--context", cluster.context)
+	} else if cluster.cluster != "" {
+		return nil, fmt.Errorf("no context found for cluster %q", cluster.cluster)
+	}
+
+	switch cluster.namespace {
+	case "":
+	case "*":
+		out = append(out, "--all-namespaces")
+	default:
+		out = append(out, "--namespace", cluster.namespace)
+	}
+	return out, nil
 }
 
 // isInteractiveCommand checks if the kubectl command requires TTY access
