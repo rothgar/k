@@ -1,59 +1,61 @@
 #compdef k
 
 # Source kubectl completion and rename all kubectl references to k
-# This makes the standard kubectl completion work for the k command
+# This makes the standard kubectl completion work for the k command.
+# The generated script defines _k, so keep a copy of it as _k_kubectl
+# before the wrapper below redefines _k.
+#
+# kubectl's completion asks the binary itself (k __complete ...) for
+# candidates. k turns kspace arguments into --context and --namespace before
+# kubectl sees them, so resource completion after a kspace word is already
+# context aware. Only the kspace words themselves need custom handling.
 source <(kubectl completion zsh | sed 's/kubectl/k/g')
+functions[_k_kubectl]=$functions[_k]
 
 # Custom completion for k's special syntax (@cluster, +context, :namespace)
-# This extends the kubectl completion with k-specific features
 
-_k_kspace_contexts() {
-    local contexts
-    contexts=(${(f)"$(kubectl config view -o template --template='{{ range .contexts }}+{{ .name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
-    _describe 'contexts' contexts
+# Complete +context[,context] or @cluster[,cluster] from the kubeconfig k uses
+_k_kspace_config() {
+    local kind=$1 names
+    names=(${(f)"$(k config view -o template --template="{{ range .$kind }}{{ .name }}{{ \"\n\" }}{{ end }}" 2>/dev/null)"})
+    # Ignore the leading +/@ and any already completed comma separated names
+    compset -P '[+@]'
+    compset -P '*,'
+    # No trailing space so :namespace or ,name can be added
+    compadd -S '' -- $names
 }
 
-_k_kspace_clusters() {
-    local clusters
-    clusters=(${(f)"$(kubectl config view -o template --template='{{ range .clusters }}@{{ .name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
-    _describe 'clusters' clusters
-}
-
+# Complete :namespace, +context:namespace or @cluster:namespace (comma separated too)
 _k_kspace_namespaces() {
-    local namespaces context_arg
-    # Extract context from current argument if present
-    context_arg="${words[CURRENT]%%:*}"
-    namespaces=(${(f)"$(kubectl ${context_arg} get namespaces -o template --template='{{ range .items }}:{{ .metadata.name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
-    _describe 'namespaces' namespaces
+    local target=${words[CURRENT]%%:*} names
+    # target is the +context or @cluster part, empty for a bare :namespace
+    names=(${(f)"$(k $target get namespaces -o template --template='{{ range .items }}{{ .metadata.name }}{{ "\n" }}{{ end }}' 2>/dev/null)"})
+    # Ignore everything up to the last : or ,
+    compset -P '*[:,]'
+    compadd -S '' -- $names
 }
 
 _k() {
-    local curcontext="$curcontext" state line
-    typeset -A opt_args
-
-    # Check if the current word starts with special k characters
     case "${words[CURRENT]}" in
-        +*)
-            _k_kspace_contexts
-            return
-            ;;
-        @*)
-            _k_kspace_clusters
-            return
-            ;;
-        :*)
+        [+@]*:* | :* )
             _k_kspace_namespaces
-            return
             ;;
-        *:*)
-            # Context/cluster with namespace
-            _k_kspace_namespaces
-            return
+        +* )
+            _k_kspace_config contexts
+            ;;
+        @* )
+            _k_kspace_config clusters
+            ;;
+        * )
+            # Fall back to standard kubectl completion (already renamed to k)
+            _k_kubectl "$@"
             ;;
     esac
-
-    # Fall back to standard kubectl completion (already renamed to k)
-    _kubectl
 }
 
 compdef _k k
+
+# When this file is autoloaded as the _k function, run the completion now
+if [ "$funcstack[1]" = "_k" ]; then
+    _k "$@"
+fi

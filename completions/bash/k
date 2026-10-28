@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
 # Source kubectl completion and rename all kubectl references to k
-# This makes the standard kubectl completion work for the k command
+# This makes the standard kubectl completion work for the k command.
+#
+# kubectl generates cobra "v2" completion: __start_k asks the binary itself
+# (k __complete ...) for candidates. k turns kspace arguments into --context
+# and --namespace before kubectl sees them, so resource completion after a
+# kspace word is already context aware. Only the kspace words themselves
+# (+context, @cluster, :namespace) need custom handling, done by _k_complete
+# which wraps __start_k below.
 source <(kubectl completion bash | sed 's/kubectl/k/g')
 
 # Custom completion functions for k's special syntax (@cluster, +context, :namespace)
@@ -18,12 +25,12 @@ __k_kspace_parse_config() {
     esac
 
     # Template to list contexts or clusters with the leading character
-    template="{{ range .$1  }}$lead_char{{ .name }} {{ end }}"
+    template="{{ range .$1 }}$lead_char{{ .name }}{{ \"\\n\" }}{{ end }}"
 
     # ${cur##*,} removes everything up to and including the last comma
     # This allows completion of comma-separated values
     if k_out=$(k config view -o template --template="${template}" 2>/dev/null); then
-        COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}" ) )
+        COMPREPLY=( $( compgen -W "${k_out}" -- "${cur##*,}" ) )
         # Don't add space after completion so users can add :namespace
         compopt -o nospace
     fi
@@ -31,7 +38,7 @@ __k_kspace_parse_config() {
 
 __k_kspace_parse_get() {
     local template
-    template="${2:-"{{ range .items  }}{{ .metadata.name }} {{ end }}"}"
+    template="${2:-"{{ range .items }}{{ .metadata.name }}{{ \"\\n\" }}{{ end }}"}"
     local k_out
 
     # ${cur%%:*} removes everything after (and including) :
@@ -40,7 +47,7 @@ __k_kspace_parse_get() {
         # Remove the leading : for filtering with compgen
         cur=${cur#*:}
         # ${cur##*,} removes everything up to the last comma for multi-namespace completion
-        COMPREPLY=( $( compgen -W "${k_out[*]}" -- "${cur##*,}") )
+        COMPREPLY=( $( compgen -W "${k_out}" -- "${cur##*,}") )
         # Don't add space after namespace in case user wants to add another comma
         compopt -o nospace
     fi
@@ -58,12 +65,11 @@ __k_kspace_get_resource_namespace() {
     __k_kspace_parse_get "namespace"
 }
 
+# Completes the kspace word in $cur. Because ':' is in COMP_WORDBREAKS,
+# readline only replaces the text after the last ':' so replies for words
+# containing a namespace must not include the +context/@cluster part.
 __k_handle_kspace() {
-    local cur prefix
-
-    # Use _get_comp_words_by_ref excluding : from COMP_WORDBREAKS
-    # This is needed because _init_completion would split ":namespace" incorrectly
-    _get_comp_words_by_ref -n : cur || return
+    local prefix
 
     # Match patterns for k's special syntax
     case $cur in
@@ -83,54 +89,37 @@ __k_handle_kspace() {
         ;;
     # Context or cluster with namespace: +context:ns or @cluster:ns
     *:* )
-        [[ $cur == *,* ]] && prefix="${cur%,*},"
         __k_kspace_get_resource_namespace
-        COMPREPLY=( "${COMPREPLY[@]/#/$prefix}" )
         ;;
-    # Context only: +context
+    # Context only: +context[,context]
     +* )
         __k_kspace_parse_config_contexts
+        [[ $cur == *,* ]] && COMPREPLY=( "${COMPREPLY[@]/#/${cur%,*},}" )
         ;;
-    # Cluster only: @cluster
+    # Cluster only: @cluster[,cluster]
     @* )
         __k_kspace_parse_config_clusters
+        [[ $cur == *,* ]] && COMPREPLY=( "${COMPREPLY[@]/#/${cur%,*},}" )
         ;;
     esac
 }
 
-# Override __k_handle_word to intercept k's special syntax before normal kubectl completion
-# This is the key function that gets called for each word during completion
-__k_handle_word() {
-    # Check if the current word starts with our special characters
-    for char in @ : +; do
-        if [[ ${words[c]} = $char* ]]; then
-            __k_handle_kspace
-            return
-        fi
-    done
+# Entry point: handle kspace words, otherwise defer to kubectl's completion
+_k_complete() {
+    local cur prev words cword
+    # Keep ':' and '=' inside the current word, same as __start_k does
+    __k_init_completion -n =: || return
 
-    # If not a kspace word, continue with normal kubectl completion
-    if [[ $c -ge $cword ]]; then
-        __k_handle_reply
+    case $cur in
+    +* | @* | :* )
+        __k_handle_kspace
         return
-    fi
-    __k_debug "${FUNCNAME[0]}: c is $c words[c] is ${words[c]}"
-    if [[ "${words[c]}" == -* ]]; then
-        __k_handle_flag
-    elif __k_contains_word "${words[c]}" "${commands[@]}"; then
-        __k_handle_command
-    elif [[ $c -eq 0 ]]; then
-        __k_handle_command
-    elif __k_contains_word "${words[c]}" "${command_aliases[@]}"; then
-        # aliashash variable is an associative array which is only supported in bash > 3
-        if [[ -z "${BASH_VERSION:-}" ]] || [[ "${BASH_VERSINFO[0]}" -gt 3 ]]; then
-            words[c]=${aliashash[${words[c]}]}
-            __k_handle_command
-        else
-            __k_handle_noun
-        fi
-    else
-        __k_handle_noun
-    fi
-    __k_handle_word
+        ;;
+    esac
+
+    __start_k "$@"
 }
+
+# Re-register k with the same options kubectl's completion used for __start_k
+# (e.g. -o default, and -o nosort on newer bash), but with our wrapper
+eval "$(complete -p k 2>/dev/null | sed 's/__start_k/_k_complete/')"

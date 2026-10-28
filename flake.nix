@@ -18,7 +18,7 @@
           inherit version;
           src = ./.;
 
-          vendorHash = "sha256-VPXiUGmqjmAKl4baWiyHlD/Bh5I5mSbm6uPTXYx5EYA=";
+          vendorHash = "sha256-chGkBAQ/utn7Xz2WIP0FOprf/o/upwUcQHHxa/gy37s=";
 
           ldflags = [
             "-s"

@@ -44,8 +44,9 @@ func main() {
 		passedArgs = append(passedArgs, arg)
 	}
 
-	// Handle version command - print k version and kubectl version
-	if len(passedArgs) > 0 && passedArgs[0] == "version" {
+	// Handle version command - print k version and kubectl version.
+	// Skip the extra line for --help and -o json/yaml so the output stays parseable.
+	if len(passedArgs) > 0 && passedArgs[0] == "version" && !skipKVersionLine(passedArgs) {
 		fmt.Printf("k version: %s\n", version)
 		// Continue to kubectl version below
 	}
